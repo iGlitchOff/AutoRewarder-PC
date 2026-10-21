@@ -10,7 +10,6 @@ import ctypes
 import os
 import shutil
 import subprocess
-import sys
 import threading
 import time
 
@@ -71,11 +70,25 @@ class UpdaterAPI:
         return {"ui_locale": self.args.language or "en"}
 
     def start_update(self):
-        if self.started:
+        if self.started or getattr(self, "_started", False):
             return {"ok": True}
         self.started = True
+        self._started = True
         threading.Thread(target=self._run, daemon=True, name="update-worker").start()
         return {"ok": True}
+
+    def retry(self):
+        self.started = False
+        self._started = False
+        return self.start_update()
+
+    def _on_download_progress(self, downloaded, total):
+        if total and total > 0:
+            fraction = downloaded / total
+            detail = f"{downloaded / 1048576:.1f} MB / {total / 1048576:.1f} MB ({int(fraction * 100)}%)"
+            self._progress("downloading", fraction, detail)
+        else:
+            self._progress("downloading", None)
 
     def _progress(self, stage, value=None, detail=None):
         if not self.window:
@@ -101,14 +114,12 @@ class UpdaterAPI:
             package = download_release_asset(
                 self.args.url,
                 self.args.asset,
-                progress=lambda done, total: self._progress(
-                    "downloading", (done / total) if total else None
-                ),
+                progress=self._on_download_progress,
             )
-            
+
             target = os.path.abspath(self.args.target)
             target_dir = os.path.dirname(target)
-            
+
             # If the downloaded asset is an executable, use it directly.
             if package.lower().endswith(".exe"):
                 source = package
@@ -128,18 +139,53 @@ class UpdaterAPI:
                         raise ValueError("The package does not contain AutoRewarder.exe.")
 
             self._progress("replacing", 0.55)
-            if source.lower().endswith(".exe") and os.path.isfile(source):
-                shutil.copy2(source, target)
-            else:
-                source_dir = os.path.dirname(source)
-                shutil.copytree(
-                    source_dir,
-                    target_dir,
-                    dirs_exist_ok=True,
-                    ignore=lambda current, names: {
-                        "AutoRewarder-Updater.exe"
-                    } if os.path.abspath(current) == os.path.abspath(source_dir) else set(),
-                )
+            source_base = os.path.basename(source).lower()
+            for attempt in range(6):
+                try:
+                    if (
+                        source_base.endswith(".exe")
+                        and os.path.isfile(source)
+                        and any(tok in source_base for tok in ("setup", "installer"))
+                    ):
+                        self._progress("installing", 0.6)
+                        subprocess.run(
+                            [
+                                source,
+                                "/VERYSILENT",
+                                "/SUPPRESSMSGBOXES",
+                                "/NORESTART",
+                                "/CLOSEAPPLICATIONS",
+                                f"/DIR={target_dir}",
+                            ],
+                            check=True,
+                        )
+                    elif source.lower().endswith(".exe") and os.path.isfile(source):
+                        shutil.copy2(source, target)
+                    else:
+                        source_dir = os.path.dirname(source)
+                        shutil.copytree(
+                            source_dir,
+                            target_dir,
+                            dirs_exist_ok=True,
+                            ignore=lambda current, names: {
+                                "AutoRewarder-Updater.exe"
+                            } if os.path.abspath(current) == os.path.abspath(source_dir) else set(),
+                        )
+                    break
+                except (PermissionError, OSError):
+                    if attempt == 5:
+                        raise
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/F", "/IM", "AutoRewarder.exe", "/T"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=3,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                        )
+                    except Exception:
+                        pass
+                    time.sleep(0.7)
 
             self._progress("cleaning", 0.86)
             time.sleep(0.35)
@@ -160,8 +206,6 @@ class UpdaterAPI:
                 try:
                     if os.path.isdir(path):
                         shutil.rmtree(path, ignore_errors=True)
-                    elif os.path.isfile(path) and path != package: # prevent deleting if we used exe directly, or maybe we should delete temp exe
-                        os.remove(path)
                     elif os.path.isfile(path):
                         os.remove(path)
                 except OSError:
@@ -172,7 +216,7 @@ def _install_updater_tray(api):
     try:
         import pystray
         from PIL import Image
-        
+
         def on_exit(icon, item):
             api.abort()
 
@@ -190,6 +234,7 @@ def _install_updater_tray(api):
         icon.run_detached()
     except Exception as e:
         print(f"[WARNING] Updater tray disabled: {e}")
+
 
 def main():
     parser = argparse.ArgumentParser()

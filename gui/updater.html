@@ -60,11 +60,15 @@
     #detail { margin: 14px 0 0; color: #949ba4; font-size: 12px; line-height: 1.4; }
     .track { width: 100%; height: 6px; overflow: hidden; border-radius: 999px; background: #4e5058; }
     #bar { width: 2%; height: 100%; border-radius: inherit; background: #5865f2; transition: width .24s ease; }
-    #abort-btn {
-      display: none;
+    .action-row {
+      display: flex;
+      gap: 10px;
       margin-top: auto;
+      justify-content: center;
+    }
+    #retry-btn, #abort-btn {
+      display: none;
       padding: 8px 16px;
-      background: #da373c;
       color: #fff;
       border: none;
       border-radius: 4px;
@@ -73,6 +77,9 @@
       cursor: pointer;
       transition: background .15s;
     }
+    #retry-btn { background: #5865f2; }
+    #retry-btn:hover { background: #4752c4; }
+    #abort-btn { background: #da373c; }
     #abort-btn:hover { background: #c93338; }
     @keyframes stage-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
     @keyframes logo-float { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-3px) rotate(3deg); } }
@@ -88,14 +95,17 @@
     <div class="track" id="track-container"><div id="bar"></div></div>
     <div class="loading-dots" id="dots-container" aria-hidden="true"><i></i><i></i><i></i></div>
     <p id="detail">The new version will open automatically.</p>
-    <button id="abort-btn" onclick="abortUpdate()">Abort</button>
+    <div class="action-row">
+      <button id="retry-btn" onclick="retryUpdate()">Retry</button>
+      <button id="abort-btn" onclick="abortUpdate()">Abort</button>
+    </div>
   </main>
   <script>
     const COPY = {
-      en: { title: "Updating AutoRewarder", closing: "Closing AutoRewarder…", downloading: "Downloading…", installing: "Installing…", replacing: "Replacing the old version…", cleaning: "Cleaning up…", finished: "Opening the new version…", detail: "The new version will open automatically.", error: "The update could not be installed.", abort: "Abort" },
-      es: { title: "Actualizando AutoRewarder", closing: "Cerrando AutoRewarder…", downloading: "Descargando…", installing: "Instalando…", replacing: "Reemplazando la versión anterior…", cleaning: "Limpiando…", finished: "Abriendo la nueva versión…", detail: "La nueva versión se abrirá automáticamente.", error: "No se pudo instalar la actualización.", abort: "Abortar" },
-      pt: { title: "Atualizando o AutoRewarder", closing: "Fechando o AutoRewarder…", downloading: "Baixando…", installing: "Instalando…", replacing: "Substituindo a versão anterior…", cleaning: "Limpando…", finished: "Abrindo a nova versão…", detail: "A nova versão será aberta automaticamente.", error: "Não foi possível instalar a atualização.", abort: "Abortar" },
-      zh: { title: "正在更新 AutoRewarder", closing: "正在关闭 AutoRewarder…", downloading: "正在下载…", installing: "正在安装…", replacing: "正在替换旧版本…", cleaning: "正在清理…", finished: "正在打开新版本…", detail: "新版本会自动打开。", error: "无法安装更新。", abort: "中止" }
+      en: { title: "Updating AutoRewarder", closing: "Closing AutoRewarder…", downloading: "Downloading…", installing: "Installing…", replacing: "Replacing the old version…", cleaning: "Cleaning up…", finished: "Opening the new version…", detail: "The new version will open automatically.", error: "The update could not be installed.", retry: "Retry", abort: "Abort" },
+      es: { title: "Actualizando AutoRewarder", closing: "Cerrando AutoRewarder…", downloading: "Descargando…", installing: "Instalando…", replacing: "Reemplazando la versión anterior…", cleaning: "Limpiando…", finished: "Abriendo la nueva versión…", detail: "La nueva versión se abrirá automáticamente.", error: "No se pudo instalar la actualización.", retry: "Reintentar", abort: "Abortar" },
+      pt: { title: "Atualizando o AutoRewarder", closing: "Fechando o AutoRewarder…", downloading: "Baixando…", installing: "Instalando…", replacing: "Substituindo a versão anterior…", cleaning: "Limpando…", finished: "Abrindo a nova versão…", detail: "A nova versão será aberta automaticamente.", error: "Não foi possível instalar a atualização.", retry: "Tentar novamente", abort: "Abortar" },
+      zh: { title: "正在更新 AutoRewarder", closing: "正在关闭 AutoRewarder…", downloading: "正在下载…", installing: "正在安装…", replacing: "正在替换旧版本…", cleaning: "正在清理…", finished: "正在打开新版本…", detail: "新版本会自动打开。", error: "无法安装更新。", retry: "重试", abort: "中止" }
     };
     let lang = "en";
     function copy(key) { return (COPY[lang] || COPY.en)[key] || COPY.en[key]; }
@@ -103,13 +113,19 @@
       document.getElementById("title").textContent = copy("title");
       document.getElementById("stage").textContent = stage === "error" ? copy("error") : copy(stage || "installing");
       document.getElementById("detail").textContent = detail || copy("detail");
+      document.getElementById("retry-btn").textContent = copy("retry");
       document.getElementById("abort-btn").textContent = copy("abort");
       
       if (stage === "error") {
         document.getElementById("track-container").style.display = "none";
         document.getElementById("dots-container").style.display = "none";
+        document.getElementById("retry-btn").style.display = "block";
         document.getElementById("abort-btn").style.display = "block";
       } else {
+        document.getElementById("track-container").style.display = "block";
+        document.getElementById("dots-container").style.display = "block";
+        document.getElementById("retry-btn").style.display = "none";
+        document.getElementById("abort-btn").style.display = "none";
         const base = { closing: 0, downloading: 5, installing: 35, replacing: 65, cleaning: 85, finished: 100 }[stage] || 0;
         const fraction = typeof progress === "number" ? progress : 0;
         const value = stage === "downloading" ? Math.min(35, 5 + fraction * 30) : Math.max(base, base + fraction * 15);
@@ -117,6 +133,9 @@
       }
     }
     function update_progress(stage, progress, detail) { render(stage, progress, detail); }
+    function retryUpdate() {
+      if (window.pywebview) { pywebview.api.retry(); }
+    }
     function abortUpdate() {
       if (window.pywebview) { pywebview.api.abort(); }
     }

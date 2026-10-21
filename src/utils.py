@@ -68,18 +68,38 @@ def github_latest_release(repo, logger=None):
             if str(item.get("name") or "")
             .lower()
             .endswith((".exe", ".msi", ".zip", ".apk"))
+            and "updater" not in str(item.get("name") or "").lower()
         ]
         portable = is_portable_install()
-        wanted = "portable" if portable else "windows"
-        asset = next(
-            (
-                item
-                for item in downloadable
-                if wanted in str(item.get("name") or "").lower()
-                and (portable or "portable" not in str(item.get("name") or "").lower())
-            ),
-            downloadable[0] if downloadable else None,
-        )
+        if portable:
+            asset = next(
+                (
+                    item
+                    for item in downloadable
+                    if "portable" in str(item.get("name") or "").lower()
+                ),
+                downloadable[0] if downloadable else None,
+            )
+        else:
+            asset = next(
+                (
+                    item
+                    for item in downloadable
+                    if any(
+                        tok in str(item.get("name") or "").lower()
+                        for tok in ("setup", "installer", "windows")
+                    )
+                    and "portable" not in str(item.get("name") or "").lower()
+                ),
+                next(
+                    (
+                        item
+                        for item in downloadable
+                        if "portable" not in str(item.get("name") or "").lower()
+                    ),
+                    downloadable[0] if downloadable else None,
+                ),
+            )
         return {
             "repo": repo,
             "tag": tag,

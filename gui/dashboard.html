@@ -105,18 +105,51 @@
     <!-- Recent activity bar chart (per day, stacked by type) -->
     <section class="dash-section">
       <div class="dash-section-head">
-        <div class="dash-section-title" data-i18n="recent_activity">Recent activity (estimated points / day)</div>
+        <div class="dash-section-title" data-i18n="recent_activity">Recent activity (verified points / day)</div>
         <div class="chart-legend">
           <span class="legend-item"><span class="legend-dot legend-pc"></span>PC</span>
-          <span class="legend-item"><span class="legend-dot legend-mobile"></span>Mobile</span>
+          <span class="legend-item"><span class="legend-dot legend-mobile"></span><span data-i18n="label.mobile">Mobile</span></span>
           <span class="legend-item"><span class="legend-dot legend-daily"></span><span data-i18n="daily">Daily</span></span>
           <span class="legend-item"><span class="legend-dot legend-earn"></span><span data-i18n="earn">Earn</span></span>
           <span class="legend-item"><span class="legend-dot legend-quests"></span><span data-i18n="quests">Quests</span></span>
+          <button id="reset_chart_btn" class="refresh-btn" type="button" style="margin-left:8px;padding:4px 10px;font-size:11px;">
+            <span data-i18n="stats.reset_btn">Reset chart / stats</span>
+          </button>
         </div>
       </div>
       <div id="runs_chart" class="runs-chart"></div>
       <div id="runs_empty" class="dash-empty" data-i18n="no_activity_yet" hidden>No activity recorded yet. Start a run from the main window.</div>
     </section>
+
+    <!-- Reset confirmation modal -->
+    <div id="reset_stats_modal" class="modal-backdrop" hidden style="position:fixed;inset:0;background:rgba(6,8,14,0.78);display:flex;align-items:center;justify-content:center;z-index:100;">
+      <div class="modal-box" role="dialog" aria-modal="true" style="background:var(--surface-1,#141821);border:1px solid var(--border,#252b3b);border-radius:14px;padding:18px;width:min(380px,92vw);">
+        <h3 style="margin:0 0 8px;font-size:15px;" data-i18n="stats.reset_title">Reset statistics</h3>
+        <p style="margin:0 0 12px;font-size:12.5px;color:var(--text-muted,#9aa4b8);" data-i18n="stats.reset_desc">Choose which statistics or chart data you want to reset for this account:</p>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;font-size:12.5px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="reset_scope" value="chart" checked>
+            <span data-i18n="stats.reset_scope_chart">Reset chart history (keep real balance)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="reset_scope" value="today">
+            <span data-i18n="stats.reset_scope_today">Reset today's earned points to 0</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="reset_scope" value="lifetime">
+            <span data-i18n="stats.reset_scope_lifetime">Reset lifetime activity counters</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="reset_scope" value="all">
+            <span data-i18n="stats.reset_scope_all">Reset all statistics &amp; chart</span>
+          </label>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button id="reset_cancel_btn" type="button" class="btn-secondary" data-i18n="cancel">Cancel</button>
+          <button id="reset_confirm_btn" type="button" class="btn-primary danger" data-i18n="stats.reset_confirm">Reset now</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Multi-account recap -->
     <section class="dash-section">
@@ -289,12 +322,36 @@
       for (const key of Object.keys(dailyData || {})) {
         if (key.length !== 10) continue;
         const v = dailyData[key] || {};
+        let pcPts = (v.pc || 0) * pps;
+        let mobilePts = (v.mobile || 0) * pps;
+        let dailyPts = (v.cards || 0) * ppc;
+        let earnPts = (v.earn || 0) * ppc;
+        let questPts = (v.quests || 0) * ppc;
+        const rawTotal = pcPts + mobilePts + dailyPts + earnPts + questPts;
+        let verifiedTotal = null;
+        if (typeof v.verified_points === 'number' && v.verified_points >= 0) {
+          verifiedTotal = v.verified_points;
+        } else if (typeof v.start_balance === 'number' && typeof v.end_balance === 'number' && v.start_balance > 0) {
+          verifiedTotal = Math.max(0, v.end_balance - v.start_balance);
+        }
+        if (verifiedTotal !== null) {
+          if (rawTotal > 0 && rawTotal > verifiedTotal) {
+            const ratio = verifiedTotal / rawTotal;
+            pcPts = Math.round(pcPts * ratio);
+            mobilePts = Math.round(mobilePts * ratio);
+            dailyPts = Math.round(dailyPts * ratio);
+            earnPts = Math.round(earnPts * ratio);
+            questPts = Math.max(0, verifiedTotal - (pcPts + mobilePts + dailyPts + earnPts));
+          } else if (rawTotal === 0 && verifiedTotal > 0) {
+            earnPts = verifiedTotal;
+          }
+        }
         byDay.set(key, {
-          pc: (v.pc || 0) * pps,
-          mobile: (v.mobile || 0) * pps,
-          daily: (v.cards || 0) * ppc,
-          earn: (v.earn || 0) * ppc,
-          quests: (v.quests || 0) * ppc,
+          pc: pcPts,
+          mobile: mobilePts,
+          daily: dailyPts,
+          earn: earnPts,
+          quests: questPts,
         });
       }
 
@@ -484,6 +541,37 @@
       pywebview.api.get_all_stats().then(render_accounts);
       const btn = document.getElementById('refresh_btn');
       if (btn) btn.addEventListener('click', function () { do_refresh_balance(true); });
+
+      const resetBtn = document.getElementById('reset_chart_btn');
+      const resetModal = document.getElementById('reset_stats_modal');
+      const resetCancel = document.getElementById('reset_cancel_btn');
+      const resetConfirm = document.getElementById('reset_confirm_btn');
+      if (resetBtn && resetModal) {
+        resetBtn.addEventListener('click', function () {
+          resetModal.hidden = false;
+        });
+      }
+      if (resetCancel && resetModal) {
+        resetCancel.addEventListener('click', function () {
+          resetModal.hidden = true;
+        });
+      }
+      if (resetConfirm && resetModal) {
+        resetConfirm.addEventListener('click', function () {
+          const checked = document.querySelector('input[name="reset_scope"]:checked');
+          const scope = checked ? checked.value : 'chart';
+          resetConfirm.disabled = true;
+          pywebview.api.reset_stats(scope).then(function (stats) {
+            resetModal.hidden = true;
+            if (stats) render_current_stats(stats);
+            pywebview.api.get_all_stats().then(render_accounts);
+          }).catch(function (err) {
+            console.error('reset_stats failed:', err);
+          }).then(function () {
+            resetConfirm.disabled = false;
+          });
+        });
+      }
 
       pywebview.api.get_stats().then(function (stats) {
         render_current_stats(stats);

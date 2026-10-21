@@ -99,6 +99,10 @@ def _windows_ui_locale():
             return "es"
         if primary == 0x09:
             return "en"
+        if primary == 0x16:
+            return "pt"
+        if primary == 0x04:
+            return "zh"
     except Exception:
         pass
     try:
@@ -982,20 +986,40 @@ class AutoRewarderAPI:
 
         self.is_driver_loading = True
         try:
-            warmup_driver = self.driver_manager.setup_driver(headless=True)
+            account_id = self.account_manager.current_id()
+            if account_id:
+                self._manual_last_refresh_at[account_id] = time.time()
+            warmup_driver = self.driver_manager.setup_driver(
+                headless=True, background=True
+            )
             try:
                 # Reuse the warmup driver — already open and bound to this
                 # account's logged-in profile — to refresh the real points
                 # balance on every launch, so the GUI always opens on an
                 # up-to-date total (no extra browser, no UI blocking).
                 self._refresh_balance_on_launch(warmup_driver)
+                if (
+                    account_id
+                    and self.daily_set is not None
+                    and self.account_manager.current_id() == account_id
+                ):
+                    try:
+                        live = self.daily_set.collect_for_you(warmup_driver)
+                        self.daily_set.for_you_tasks = list(live or [])
+                        if self.account_meta is not None:
+                            self.account_meta.set_live_manual_tasks(
+                                self.daily_set.for_you_tasks
+                            )
+                        self._manual_last_refresh_at[account_id] = time.time()
+                    except Exception:
+                        pass
             finally:
                 try:
                     warmup_driver.quit()
                 except Exception:
                     pass
                 self.driver_manager.close_running_edge()
-                time.sleep(1.0)
+                time.sleep(0.5)
         except Exception as e:
             self.log(f"[ERROR] Error loading WebDriver ({CURRENT_VERSION}): {e}")
             try:
@@ -1029,19 +1053,16 @@ class AutoRewarderAPI:
         pref = str(settings.get("ui_language") or "auto").strip().lower()
         if pref in SUPPORTED_UI_LANGUAGES:
             return pref
-        blob = " ".join(
-            [
-                str(settings.get("detected_locale") or ""),
-                _windows_ui_locale(),
-            ]
-        ).lower()
-        for language in SUPPORTED_UI_LANGUAGES:
-            if (
-                blob.startswith(language)
-                or f"-{language}" in blob
-                or f"_{language}" in blob
-            ):
-                return language
+        for candidate in (
+            _windows_ui_locale(),
+            str(settings.get("detected_locale") or ""),
+        ):
+            raw = str(candidate or "").strip().lower()
+            if not raw:
+                continue
+            primary = re.split(r"[-_.\s]", raw)[0]
+            if primary in SUPPORTED_UI_LANGUAGES:
+                return primary
         return "en"
 
     def set_ui_language(self, lang):
@@ -1051,7 +1072,16 @@ class AutoRewarderAPI:
         settings = self.global_settings.settings_for_update()
         settings["ui_language"] = lang
         self.global_settings.save_settings(settings)
-        return {"ok": True, "ui_language": lang, "ui_locale": self.ui_locale()}
+        resolved = self.ui_locale()
+        for win in (self._webview_window, self._stats_window, self._history_window):
+            if win is not None:
+                try:
+                    win.evaluate_js(
+                        f"typeof set_ui_lang === 'function' && set_ui_lang({json.dumps(resolved)})"
+                    )
+                except Exception:
+                    pass
+        return {"ok": True, "ui_language": lang, "ui_locale": resolved}
 
     def get_version(self):
         """Return the local build version string (4.2.<time>)."""
@@ -1217,23 +1247,39 @@ class AutoRewarderAPI:
         """True when the bot is mid-run. Used by the headless runner to avoid overlap."""
         return self._run_lock.locked()
 
+    def _check_driver_alive(self, drv=None):
+        """Return True if *drv* still has at least one open browser window."""
+        target = drv if drv is not None else self._driver
+        if target is None:
+            return False
+        try:
+            handles = target.window_handles
+            if not handles:
+                self._stop_event.set()
+                return False
+            return True
+        except Exception:
+            self._stop_event.set()
+            return False
+
     def _quit_driver(self):
         """
-        Drop the active Selenium session.
-
-        On Stop, never call driver.quit() — that HTTP shutdown is what froze
-        the UI for tens of seconds. The browser is already being taskkill'd.
+        Drop the active Selenium session and guarantee no orphan Edge/msedgedriver
+        processes survive after a phase finishes or is stopped.
         """
         driver = self._driver
         self._driver = None
-        if driver is None:
-            return
-        if self._stop_event.is_set():
-            return
-        try:
-            driver.quit()
-        except Exception as e:
-            self.log(f"[WARNING] Error closing driver: {e}")
+        if driver is not None and not self._stop_event.is_set():
+            try:
+                driver.quit()
+            except Exception as e:
+                self.log(f"[WARNING] Error closing driver: {e}")
+        mgr = self.driver_manager
+        if mgr is not None:
+            try:
+                mgr.close_running_edge(settle=False)
+            except Exception:
+                pass
 
     def stop(self, manual=False):
         """
@@ -2617,6 +2663,10 @@ class AutoRewarderAPI:
                 setup_driver.quit()
             except Exception:
                 pass
+            try:
+                self.driver_manager.close_running_edge(settle=False)
+            except Exception:
+                pass
 
             # Always restore the Edge policy to its previous state.
             if policy_applied:
@@ -2674,10 +2724,13 @@ class AutoRewarderAPI:
         start_bal = bucket.get("start_balance")
         end_bal = balance if isinstance(balance, int) else bucket.get("end_balance")
         if isinstance(start_bal, int) and isinstance(end_bal, int):
-            today_points = int(end_bal) - int(start_bal)
+            if start_bal == 0 and end_bal > 500:
+                today_points = max(0, int(bucket.get("points_delta") or 0))
+            else:
+                today_points = max(0, int(end_bal) - int(start_bal))
             today_is_estimate = False
         elif bucket.get("points_delta") is not None:
-            today_points = int(bucket.get("points_delta") or 0)
+            today_points = max(0, int(bucket.get("points_delta") or 0))
             today_is_estimate = False
         else:
             today_points = None
@@ -2704,6 +2757,28 @@ class AutoRewarderAPI:
         if current:
             data["account"] = {"id": current["id"], "label": current["label"]}
         return data
+
+    def reset_stats(self, scope="chart"):
+        """Reset statistics/chart for the current account according to scope."""
+        if self.stats is None:
+            return None
+        scope = str(scope or "chart").strip().lower()
+        with self._stats_lock:
+            self.stats.reset_stats(scope=scope)
+        self._session_counts = {
+            "pc": 0,
+            "mobile": 0,
+            "cards": 0,
+            "earn": 0,
+            "quests": 0,
+            "visual": 0,
+            "checkins": 0,
+            "news": 0,
+            "edge_minutes": 0,
+        }
+        self._notify_stats_refresh()
+        self.log(f"Statistics reset ({scope}).")
+        return self.get_stats()
 
     def get_all_stats(self):
         """
@@ -3082,7 +3157,9 @@ class AutoRewarderAPI:
             if not self._balance_lock.acquire(blocking=False):
                 return
             balance_claimed = True
-            driver = self.driver_manager.setup_driver(headless=True)
+            driver = self.driver_manager.setup_driver(
+                headless=True, background=True
+            )
             live = self.daily_set.collect_for_you(driver)
             if self.account_manager.current_id() != account_id:
                 return
@@ -3098,6 +3175,10 @@ class AutoRewarderAPI:
             if driver is not None:
                 try:
                     driver.quit()
+                except Exception:
+                    pass
+                try:
+                    self.driver_manager.close_running_edge(settle=False)
                 except Exception:
                     pass
             if balance_claimed:
@@ -3295,7 +3376,7 @@ class AutoRewarderAPI:
         self._set_stats_loading(True)
         driver = None
         try:
-            driver = driver_manager.setup_driver(headless=True)
+            driver = driver_manager.setup_driver(headless=True, background=True)
             balance = self._fetch_balance_with_driver(driver)
         except Exception as e:
             self.log(f"[WARNING] Balance refresh failed: {e}")
@@ -3304,6 +3385,10 @@ class AutoRewarderAPI:
             if driver is not None:
                 try:
                     driver.quit()
+                except Exception:
+                    pass
+                try:
+                    driver_manager.close_running_edge(settle=False)
                 except Exception:
                     pass
             self._set_stats_loading(False)
@@ -3924,7 +4009,9 @@ class AutoRewarderAPI:
         except Exception:
             pass
         try:
-            self._driver = self.driver_manager.setup_driver(mobile=False)
+            self._driver = self.driver_manager.setup_driver(
+                mobile=False, stop_event=self._stop_event
+            )
         except Exception:
             if self._stop_event.is_set():
                 self.log("Stopped.")
@@ -3945,6 +4032,9 @@ class AutoRewarderAPI:
                 success = self.daily_set.perform_daily_set(
                     self._driver, human, stop_event=self._stop_event
                 )
+                if not self._check_driver_alive():
+                    self.log("Browser window closed — stopping tasks.")
+                    return
                 # Record cards completed + scrape the balance while we're still
                 # on the rewards dashboard, before any Stop check returns early.
                 totals = self.daily_set.last_totals
@@ -4013,6 +4103,12 @@ class AutoRewarderAPI:
 
         self.log("=== [7/8] + [8/8] Mobile app — verifying live counters ===")
         tasks = BingAppTasks(logger=self.log)
+        phone_claim = self._phone_try("claim", timeout=75)
+        if phone_claim is not None and phone_claim.get("ok"):
+            self.log(
+                f"[7/8] Mobile claim — completed on linked phone ({phone_claim.get('detail') or 'ok'})."
+            )
+            self._report("Mobile claim", True, phone_claim.get("detail") or "by phone")
         phone_checkin = self._phone_try("checkin", timeout=90)
         if phone_checkin is not None:
             if phone_checkin.get("ok"):
@@ -4062,7 +4158,9 @@ class AutoRewarderAPI:
             )
 
         try:
-            self._driver = self.driver_manager.setup_driver(mobile=True, bing_app=True)
+            self._driver = self.driver_manager.setup_driver(
+                mobile=True, bing_app=True, stop_event=self._stop_event
+            )
         except Exception:
             if self._stop_event.is_set():
                 self.log("Stopped.")
@@ -4494,7 +4592,7 @@ class AutoRewarderAPI:
 
         try:
             self._driver = self.driver_manager.setup_driver(
-                mobile=mobile, bing_app=bool(mobile)
+                mobile=mobile, bing_app=bool(mobile), stop_event=self._stop_event
             )
         except Exception:
             if self._stop_event.is_set():
@@ -4524,6 +4622,8 @@ class AutoRewarderAPI:
                 f"{int(done or 0)}/{count}"
                 + (" · Bing phone client" if mobile else ""),
             )
+            if not self._check_driver_alive():
+                return
 
             ran_daily_set = False
 

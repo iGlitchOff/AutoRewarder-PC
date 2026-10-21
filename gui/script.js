@@ -652,12 +652,13 @@ function refresh_rewards_overview() {
     const profile = info.profile || {};
     const progress = info.progress || {};
     const estimate = info.estimate || {};
-    const level = profile.membership || (profile.level ? `Level ${profile.level}` : 'Membership unavailable');
-    const region = profile.country || profile.locale || t('rewards.region_unknown');
+    const rawLevel = profile.membership || (profile.level ? `Level ${profile.level}` : t('membership_unavailable'));
+    const level = translate_runtime_text(rawLevel);
+    const region = translate_runtime_text(profile.country || profile.locale || t('rewards.region_unknown'));
     const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
     set('rewards_level', level);
     set('rewards_region', region);
-    set('rewards_estimate', `${t('rewards.estimate')}: ~${estimate.search_points || 0} pts/day`);
+    set('rewards_estimate', `${t('rewards.estimate')}: ~${estimate.search_points || 0} ${t('pts_per_day')}`);
     const leftover = (obj, fallback) => {
       if (obj && typeof obj === 'object' && obj.label) {
         const left = obj.left;
@@ -680,7 +681,9 @@ function refresh_rewards_overview() {
     set('progress_news', `${t('progress.news')}: ${leftover(progress.news, progress.news)}`);
     set('progress_edge', `${t('progress.edge')}: ${leftover(progress.edge, progress.edge)}`);
     set('progress_reset', `${t('progress.reset')}: ${translate_runtime_text(progress.reset || t('status.resets_midnight'))}`);
-    refresh_manual_tasks();
+    if (window.pywebview && pywebview.api && pywebview.api.get_manual_tasks) {
+      pywebview.api.get_manual_tasks().then(render_manual_tasks).catch(function () {});
+    }
     const pill = document.getElementById('daily_task_pill');
     if (pill) {
       const state = progress.daily_state || 'pending';
@@ -1632,6 +1635,7 @@ window.addEventListener('pywebviewready', function() {
   }
 
   pywebview.api.get_settings().then(function(settings) {
+    window.__arWindowsLocale = settings.windows_locale || '';
     const toggle = document.getElementById('hideBrowserToggle');
     if (toggle) toggle.checked = Boolean(settings.hide_browser);
     const ver = document.getElementById('app_version');
@@ -1649,6 +1653,10 @@ window.addEventListener('pywebviewready', function() {
             detected_locale: settings.detected_locale,
           });
           set_ui_lang(loc);
+          const settingsBackdrop = document.getElementById('settings_modal');
+          if (settingsBackdrop && !settingsBackdrop.hidden) {
+            open_settings_modal();
+          }
         });
       };
     }
@@ -1884,8 +1892,8 @@ function render_phone_device(info) {
   if (!wrap) return;
   wrap.innerHTML = '';
   const phones = (info && info.phones) || [];
-  const membership = (info && info.membership) || 'Microsoft Rewards';
-  const region = (info && info.region) || '';
+  const membership = translate_runtime_text((info && info.membership) || 'Microsoft Rewards');
+  const region = translate_runtime_text((info && info.region) || '');
   const ready = info && info.account && info.account.first_setup_done;
   const readyLabel = ready ? t('phone.ready') : t('phone.setup_pending');
   const suffix = region ? ` · ${membership} · ${region} · ${t('phone.by_phone')}` : ` · ${membership} · ${t('phone.by_phone')}`;
@@ -1922,6 +1930,17 @@ function render_phone_device(info) {
       dot.title = phone.online ? t('phone.online') : t('phone.offline');
       const actions = document.createElement('div');
       actions.className = 'phone-row-actions';
+      const runAll = document.createElement('button');
+      runAll.type = 'button';
+      runAll.className = 'phone-mini';
+      runAll.textContent = t('phone.run_all');
+      runAll.title = t('phone.run_all');
+      runAll.addEventListener('click', function () {
+        pywebview.api.send_phone_job('all').then(function (r) {
+          if (!r || !r.ok) show_toast((r && r.error) || t('phone_offline_toast'), 'warning');
+          else show_toast(t('phone_all_sent'), 'success');
+        });
+      });
       const ask = document.createElement('button');
       ask.type = 'button';
       ask.className = 'phone-mini';
@@ -1931,6 +1950,17 @@ function render_phone_device(info) {
         pywebview.api.send_phone_job('checkin').then(function (r) {
           if (!r || !r.ok) show_toast((r && r.error) || t('phone_offline_toast'), 'warning');
           else show_toast(t('checkin_sent'), 'success');
+        });
+      });
+      const claimBtn = document.createElement('button');
+      claimBtn.type = 'button';
+      claimBtn.className = 'phone-mini';
+      claimBtn.textContent = t('claim');
+      claimBtn.title = t('claim');
+      claimBtn.addEventListener('click', function () {
+        pywebview.api.send_phone_job('claim').then(function (r) {
+          if (!r || !r.ok) show_toast((r && r.error) || t('phone_offline_toast'), 'warning');
+          else show_toast(t('claim_sent'), 'success');
         });
       });
       const news = document.createElement('button');
@@ -1969,7 +1999,9 @@ function render_phone_device(info) {
           refresh_account_ui();
         });
       });
+      actions.appendChild(runAll);
       actions.appendChild(ask);
+      actions.appendChild(claimBtn);
       actions.appendChild(news);
       actions.appendChild(unlink);
       row.appendChild(avatar);

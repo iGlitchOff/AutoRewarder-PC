@@ -46,30 +46,22 @@ _SCRAPE_BALANCE_JS = r"""
 return (function () {
   function toInt(raw) {
     if (raw == null) return null;
-    var digits = String(raw).replace(/[^0-9]/g, '');
+    var s = String(raw).trim();
+    if (!s) return null;
+    // Match the first contiguous formatted number (e.g. "12,450" or "12.450" or "9 494")
+    // rather than concatenating unrelated digits across a string.
+    var m = s.match(/\d{1,3}(?:[.,\s\u00A0]\d{3})+|\d+/);
+    if (!m) return null;
+    var digits = m[0].replace(/[^0-9]/g, '');
     if (!digits) return null;
     var n = parseInt(digits, 10);
-    return (isFinite(n) && n >= 0) ? n : null;
+    return (isFinite(n) && n >= 0 && n <= 10000000) ? n : null;
   }
-  // Ordered most-specific first. The available-points balance lives inside the
-  // <mee-rewards-user-status-banner-balance> component as
-  //   <p class="pointsValue"><mee-rewards-counter-animation>
-  //       <span aria-label="9 494 ">9 494</span> ...
-  // The span's aria-label is the authoritative final value (its text content
-  // animates up from a lower number). Every selector MUST be scoped to the
-  // balance component: the same .pointsValue markup is reused for "daily
-  // points", "streak" and "referral" tiles, so an unscoped .pointsValue could
-  // read (and persist) the wrong number. #id_rc / #fly_id_rc are the Bing SERP
-  // rewards counter — a distinct element, not a decoy tile — used as a fallback
-  // when the dashboard isn't loaded.
   var selectors = [
     'mee-rewards-user-status-banner-balance .pointsValue span[aria-label]',
     'mee-rewards-user-status-banner-balance mee-rewards-counter-animation span',
     'mee-rewards-user-status-banner-balance .pointsValue',
     '#balanceToolTipDiv .pointsValue',
-    // New (Next.js) dashboard: the "Points disponibles" card links to /redeem
-    // and shows the balance in a .text-pageHeader node. Scoped to that card so
-    // we don't pick the member-name header (same class, different anchor).
     'a[href="/redeem"] .text-pageHeader',
     '#fly_id_rc', '#id_rc'
   ];
@@ -80,7 +72,6 @@ return (function () {
       var el = nodes[j];
       var aria = el.getAttribute('aria-label');
       var txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
-      // aria-label is the reliable final value; text content may be mid-animation.
       var val = toInt(aria);
       if (val == null) val = toInt(txt);
       if (candidates.length < 14) {
@@ -94,11 +85,6 @@ return (function () {
       }
     }
   }
-  // New (Next.js) dashboard: none of the legacy mee-rewards-* nodes exist. The
-  // available-points balance is streamed into the RSC payload (window.__next_f)
-  // as "availablePoints":<int> / "balance":<int> (the ProfileUpdate value), not
-  // rendered into any stable DOM node. Read it from there. On the legacy
-  // dashboard or a Bing SERP __next_f is absent, so this block is a no-op.
   try {
     if (window.__next_f) {
       var parts = [];
@@ -108,22 +94,17 @@ return (function () {
         else if (typeof e === 'string') { parts.push(e); }
       }
       var blob = parts.join('');
-      // Prefer availablePoints; fall back to balance. Take the last match so a
-      // client-refreshed value wins over an earlier server-rendered one.
-      var keys = ['availablePoints', 'balance'];
-      for (var ki = 0; ki < keys.length; ki++) {
-        var re = new RegExp('"' + keys[ki] + '"\\s*:\\s*(\\d+)', 'g');
-        var m, last = null;
-        while ((m = re.exec(blob)) !== null) { last = parseInt(m[1], 10); }
-        if (last != null && isFinite(last) && last >= 0) {
-          if (candidates.length < 14) {
-            candidates.push('__next_f.' + keys[ki] + ' => [' + last + ']');
-          }
-          return {
-            value: last, via: 'new-dashboard:' + keys[ki], candidates: candidates,
-            url: location.href, title: document.title
-          };
+      var re = /"availablePoints"\s*:\s*(\d+)/g;
+      var m, last = null;
+      while ((m = re.exec(blob)) !== null) { last = parseInt(m[1], 10); }
+      if (last != null && isFinite(last) && last >= 0 && last <= 10000000) {
+        if (candidates.length < 14) {
+          candidates.push('__next_f.availablePoints => [' + last + ']');
         }
+        return {
+          value: last, via: 'new-dashboard:availablePoints', candidates: candidates,
+          url: location.href, title: document.title
+        };
       }
     }
   } catch (eNext) { /* fall through to null */ }
@@ -135,23 +116,71 @@ return (function () {
 """
 
 
+def _fetch_api_userinfo_balance(driver):
+    """Fetch authoritative availablePoints and counters from /api/getuserinfo."""
+    if driver is None:
+        return None
+    try:
+        url = str(getattr(driver, "current_url", "") or "").lower()
+        if "rewards.bing.com" not in url:
+            return None
+        driver.set_script_timeout(12)
+        data = driver.execute_async_script("""
+            const done = arguments[0];
+            fetch('/api/getuserinfo?type=1&_=' + Date.now(), {
+              credentials: 'include',
+              headers: {Accept: 'application/json'}
+            })
+              .then(r => r.ok ? r.json() : null)
+              .then(d => {
+                if (!d) return done(null);
+                const dash = d.dashboard || d;
+                const us = (dash && dash.userStatus) || {};
+                if (us.isSignedOut === true || d.isSignedOut === true) return done(null);
+                const avail = us.availablePoints;
+                if (typeof avail === 'number' && isFinite(avail) && avail >= 0) {
+                  return done({value: Math.floor(avail), via: 'api:getuserinfo'});
+                }
+                return done(null);
+              })
+              .catch(() => done(null));
+            """)
+        if isinstance(data, dict) and isinstance(data.get("value"), int):
+            return data
+    except Exception:
+        pass
+    return None
+
+
 def scrape_points_balance_debug(driver):
     """
-    Run the balance-scraping JS and return its raw diagnostic object:
-    {value, via, candidates, url, title}. `value` is the int balance or None.
-    Returns a minimal dict with an `error` key if the JS itself failed. Used by
-    the caller to both extract the balance and surface a diagnostic when it
-    isn't found (which page were we on? what did the selectors match?).
+    Run the balance-scraping logic, preferring the authoritative
+    /api/getuserinfo endpoint on rewards.bing.com and validating DOM fallback.
     """
+    api_res = _fetch_api_userinfo_balance(driver)
+    if api_res is not None:
+        try:
+            api_res["url"] = driver.current_url
+            api_res["title"] = driver.title
+            api_res["candidates"] = [f"api:getuserinfo => [{api_res['value']}]"]
+        except Exception:
+            pass
+        return api_res
+
     try:
         result = driver.execute_script(_SCRAPE_BALANCE_JS)
     except Exception as e:
         return {"value": None, "via": None, "candidates": [], "error": str(e)[:120]}
 
     if isinstance(result, dict):
+        # Reject unverified 0 balances from Bing SERP counters (#id_rc / #fly_id_rc)
+        # because #id_rc initializes at 0 before the Rewards flyout finishes authenticating.
+        via = str(result.get("via") or "")
+        if result.get("value") == 0 and via in ("#id_rc", "#fly_id_rc"):
+            result["value"] = None
         return result
     if isinstance(result, (int, float)) and not isinstance(result, bool):
-        return {"value": result, "via": "legacy", "candidates": []}
+        return {"value": int(result), "via": "legacy", "candidates": []}
     return {"value": None, "via": None, "candidates": []}
 
 
@@ -347,17 +376,26 @@ class StatsManager:
         """
         if new_balance is None:
             return
+        new_balance = int(new_balance)
         today = datetime.now().date().isoformat()
         bucket = stats["daily"].setdefault(
             today, {"pc": 0, "mobile": 0, "cards": 0, "earn": 0, "quests": 0, "runs": 0}
         )
-        if bucket.get("start_balance") is None:
-            prior = stats["balance"].get("current")
-            if isinstance(prior, int):
+        prior = stats["balance"].get("current")
+        # Guard against unauthenticated 0 scrapes corrupting start_balance
+        if new_balance == 0 and isinstance(prior, int) and prior > 50:
+            return
+        start_bal = bucket.get("start_balance")
+        if start_bal is None or (start_bal == 0 and new_balance > 50 and int(bucket.get("runs") or 0) <= 1):
+            if isinstance(prior, int) and prior > 0:
                 bucket["start_balance"] = int(prior)
             else:
-                bucket["start_balance"] = int(new_balance)
-        bucket["end_balance"] = int(new_balance)
+                bucket["start_balance"] = new_balance
+        bucket["end_balance"] = new_balance
+        if isinstance(bucket.get("start_balance"), int):
+            bucket["verified_points"] = max(
+                0, int(bucket["end_balance"]) - int(bucket["start_balance"])
+            )
 
     def update_balance(self, balance):
         """
@@ -374,12 +412,96 @@ class StatsManager:
         if balance is None:
             return self.get_stats()
 
+        balance = int(balance)
         stats = self.get_stats()
+        prior = stats["balance"].get("current")
+        # Reject bogus 0 scrape if user already had a real positive balance
+        if balance == 0 and isinstance(prior, int) and prior > 50:
+            return stats
         self._ensure_day_start_balance(stats, balance)
-        stats["balance"]["previous"] = stats["balance"]["current"]
-        stats["balance"]["current"] = int(balance)
+        stats["balance"]["previous"] = prior
+        stats["balance"]["current"] = balance
         stats["balance"]["updated_at"] = datetime.now().isoformat(timespec="seconds")
         stats["daily"] = self._trim_daily(stats["daily"])
+        self.save_stats(stats)
+        return stats
+
+    def reset_stats(self, scope="chart"):
+        """
+        Reset statistics according to the user-selected scope:
+        - 'today': Reset only today's earned points & activity bucket.
+        - 'chart': Reset all daily chart bars while keeping current balance & lifetime.
+        - 'lifetime': Reset lifetime activity counters while keeping balance & chart.
+        - 'all': Reset chart, today, lifetime, and last_session while keeping current balance as baseline.
+        """
+        scope = str(scope or "chart").strip().lower()
+        stats = self.get_stats()
+        current_bal = stats.get("balance", {}).get("current")
+        now_iso = datetime.now().isoformat(timespec="seconds")
+        today = now_iso[:10]
+        fresh = self._default()
+
+        if scope == "today":
+            stats["daily"].pop(today, None)
+            if isinstance(current_bal, int):
+                stats["daily"][today] = {
+                    "pc": 0,
+                    "mobile": 0,
+                    "cards": 0,
+                    "earn": 0,
+                    "quests": 0,
+                    "runs": 0,
+                    "start_balance": current_bal,
+                    "end_balance": current_bal,
+                    "verified_points": 0,
+                    "points_delta": 0,
+                    "points_estimate": 0,
+                }
+            stats["last_session"] = dict(fresh["last_session"])
+            if isinstance(current_bal, int):
+                stats["balance"]["previous"] = current_bal
+        elif scope == "chart":
+            stats["daily"] = {}
+            if isinstance(current_bal, int):
+                stats["daily"][today] = {
+                    "pc": 0,
+                    "mobile": 0,
+                    "cards": 0,
+                    "earn": 0,
+                    "quests": 0,
+                    "runs": 0,
+                    "start_balance": current_bal,
+                    "end_balance": current_bal,
+                    "verified_points": 0,
+                    "points_delta": 0,
+                    "points_estimate": 0,
+                }
+                stats["balance"]["previous"] = current_bal
+            stats["last_session"] = dict(fresh["last_session"])
+        elif scope == "lifetime":
+            stats["lifetime"] = dict(fresh["lifetime"])
+        else:  # 'all'
+            stats = fresh
+            if isinstance(current_bal, int):
+                stats["balance"] = {
+                    "current": current_bal,
+                    "previous": current_bal,
+                    "updated_at": now_iso,
+                }
+                stats["daily"][today] = {
+                    "pc": 0,
+                    "mobile": 0,
+                    "cards": 0,
+                    "earn": 0,
+                    "quests": 0,
+                    "runs": 0,
+                    "start_balance": current_bal,
+                    "end_balance": current_bal,
+                    "verified_points": 0,
+                    "points_delta": 0,
+                    "points_estimate": 0,
+                }
+
         self.save_stats(stats)
         return stats
 

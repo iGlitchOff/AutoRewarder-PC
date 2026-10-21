@@ -433,11 +433,150 @@ Object.assign(UI_COPY, {
   "phone_unlinked": { en: "Phone unlinked. Microsoft account kept.", es: "Celular desvinculado. La cuenta Microsoft se conservó.", pt: "Celular desvinculado. A conta Microsoft foi mantida.", zh: "手机已取消关联，Microsoft 账户保留。" },
 });
 
+Object.assign(UI_COPY, {
+  "runtime.ok_prefix": { en: "OK", es: "Correcto", pt: "OK", zh: "成功" },
+  "runtime.skipped_prefix": { en: "Skipped", es: "Omitido", pt: "Ignorado", zh: "已跳过" },
+  "runtime.error_prefix": { en: "Error", es: "Error", pt: "Erro", zh: "错误" },
+  "runtime.warning_prefix": { en: "Warning", es: "Advertencia", pt: "Aviso", zh: "警告" },
+  "runtime.opening_edge": { en: "Opening Edge", es: "Abriendo Edge", pt: "Abrindo o Edge", zh: "正在打开 Edge" },
+  "runtime.edge_ready": { en: "Edge is ready.", es: "Edge está listo.", pt: "O Edge está pronto.", zh: "Edge 已准备就绪。" },
+  "runtime.already_complete": { en: "already complete today, skipping.", es: "ya está completo hoy; se omitirá.", pt: "já está concluído hoje; será ignorado.", zh: "今天已完成，跳过。" },
+  "runtime.not_listed": { en: "not listed on today's dashboard, skipping.", es: "no aparece en el panel de hoy; se omitirá.", pt: "não aparece no painel de hoje; será ignorado.", zh: "未列在今天的面板中，跳过。" },
+  "runtime.not_complete_running": { en: "not complete, running.", es: "no está completo; se ejecutará.", pt: "não está concluído; será executado.", zh: "尚未完成，正在运行。" },
+  "runtime.credited": { en: "credited", es: "acreditado", pt: "creditado", zh: "已获得积分" },
+  "runtime.already_done": { en: "already done", es: "ya completado", pt: "já concluído", zh: "已完成" },
+  "runtime.no_phone": { en: "No linked phone available for check-in/news; continuing with the simulated mobile client.", es: "No hay celular vinculado para el registro/noticias; se continuará con el cliente móvil simulado.", pt: "Não há celular vinculado para check-in/notícias; continuando com o cliente móvel simulado.", zh: "没有已关联的手机可用于签到/新闻，将继续使用模拟移动客户端。" },
+  "runtime.nothing_to_do": { en: "Nothing to do (PC and Mobile counts are both 0).", es: "No hay nada que hacer (las cantidades de PC y móvil son 0).", pt: "Nada para fazer (as quantidades de PC e celular são 0).", zh: "没有要执行的任务（电脑和手机搜索次数均为 0）。" },
+  "update_download_failed": { en: "Could not download the update: {error}", es: "No se pudo descargar la actualización: {error}", pt: "Não foi possível baixar a atualização: {error}", zh: "无法下载更新：{error}" },
+  "update_original_newer": { en: "A new version of the upstream repository ({tag}) is available. Notify the developer; it will not be installed automatically.", es: "Hay una nueva versión del repositorio original ({tag}). Notifica al desarrollador; no se instalará automáticamente.", pt: "Há uma nova versão do repositório original ({tag}). Notifique o desenvolvedor; não será instalada automaticamente.", zh: "原始仓库有新版本（{tag}）。请通知开发者；不会自动安装。" },
+  "update_original_also": { en: "There is also an upstream repository update to notify the developer about.", es: "También hay una actualización del repositorio original para notificar al desarrollador.", pt: "Há também uma atualização do repositório original para notificar o desenvolvedor.", zh: "还有原始仓库更新需通知开发者。" },
+  "update_custom_available": { en: "New AutoRewarder update {tag} available. Download now?", es: "Nueva actualización propia {tag}. ¿Quieres descargarla?", pt: "Nova atualização {tag} disponível. Deseja baixar?", zh: "发现新版本 {tag}，是否立即下载？" },
+  "accounts.empty_modal": { en: "No accounts yet. Click “Add account” to create your first one.", es: "Aún no hay cuentas. Haz clic en «Agregar cuenta» para crear la primera.", pt: "Ainda não há contas. Clique em “Adicionar conta” para criar a primeira.", zh: "暂无账户。点击“添加账户”创建第一个账户。" },
+  "account.rename_title": { en: "Rename account", es: "Renombrar cuenta", pt: "Renomear conta", zh: "重命名账户" },
+  "account.delete_msg": { en: "This removes its browser profile, history, and daily-set status. This cannot be undone.", es: "Esto eliminará su perfil del navegador, historial y estado de tareas diarias. No se puede deshacer.", pt: "Isso remove o perfil do navegador, histórico e status das tarefas diárias. Não pode ser desfeito.", zh: "这将删除其浏览器配置文件、历史记录和每日任务状态。此操作无法撤销。" },
+  "account_renamed": { en: "Renamed to \"{name}\".", es: "Renombrada a \"{name}\".", pt: "Renomeada para \"{name}\".", zh: "已重命名为“{name}”。" },
+  "account_rename_failed": { en: "Rename failed.", es: "No se pudo renombrar.", pt: "Falha ao renomear.", zh: "重命名失败。" },
+  "account_setup_failed_start": { en: "Setup could not be started.", es: "No se pudo iniciar la configuración.", pt: "Não foi possível iniciar a configuração.", zh: "无法启动设置。" },
+  "account_deleted_named": { en: "\"{name}\" deleted.", es: "\"{name}\" eliminada.", pt: "\"{name}\" excluída.", zh: "已删除“{name}”。" },
+  "account_delete_failed": { en: "Delete failed.", es: "No se pudo eliminar.", pt: "Falha ao excluir.", zh: "删除失败。" },
+  "phone.updates": { en: "Check updates", es: "Buscar actualizaciones", pt: "Verificar atualizações", zh: "检查更新" },
+  "phone.download": { en: "Download", es: "Descargar", pt: "Baixar", zh: "下载" },
+  "phone.cancel": { en: "Cancel", es: "Cancelar", pt: "Cancelar", zh: "取消" },
+  "phone.pair": { en: "Link with PC", es: "Vincular con el PC", pt: "Vincular ao PC", zh: "与电脑关联" },
+  "phone.pair_hint": { en: "In the PC app, open the Microsoft account and tap Link phone. Scan the QR or enter the code.", es: "En la app del PC, abre la cuenta Microsoft y pulsa Vincular celular. Escanea el QR o escribe el código.", pt: "No app do PC, abra a conta Microsoft e toque em Vincular celular. Escaneie o QR ou digite o código.", zh: "在电脑应用中打开 Microsoft 账户并点击关联手机。扫描二维码或输入代码。" },
+  "phone.pair_btn": { en: "Link", es: "Vincular", pt: "Vincular", zh: "关联" },
+  "phone.looking": { en: "Finding your PC…", es: "Buscando tu PC…", pt: "Procurando seu PC…", zh: "正在查找你的电脑…" },
+  "phone.account": { en: "Microsoft account", es: "Cuenta Microsoft", pt: "Conta Microsoft", zh: "Microsoft 账户" },
+  "phone.points": { en: "Points", es: "Puntos", pt: "Pontos", zh: "积分" },
+  "phone.total": { en: "Total points", es: "Puntos totales", pt: "Total de pontos", zh: "总积分" },
+  "phone.today": { en: "Earned today", es: "Ganados hoy", pt: "Ganhos hoje", zh: "今日获得" },
+  "phone.brand": { en: "Microsoft Rewards · Mobile companion", es: "Microsoft Rewards · Compañero móvil", pt: "Microsoft Rewards · Companheiro móvel", zh: "Microsoft Rewards · 手机助手" },
+  "phone.ready_state": { en: "Ready to run", es: "Listo para ejecutar", pt: "Pronto para executar", zh: "准备就绪" },
+  "phone.setup_state": { en: "Setup pending", es: "Configuración pendiente", pt: "Configuração pendente", zh: "待设置" },
+  "phone.by_microsoft": { en: "by Microsoft", es: "por Microsoft", pt: "pela Microsoft", zh: "由 Microsoft 提供" },
+  "phone.by_phone": { en: "on this phone", es: "en este celular", pt: "neste celular", zh: "在此手机上" },
+  "phone.rewards": { en: "Rewards overview", es: "Resumen de Rewards", pt: "Resumo do Rewards", zh: "Rewards 概览" },
+  "phone.progress.pc": { en: "PC", es: "PC", pt: "PC", zh: "电脑" },
+  "phone.progress.mobile": { en: "Mobile", es: "Móvil", pt: "Celular", zh: "手机" },
+  "phone.progress.daily": { en: "Daily", es: "Diarias", pt: "Diárias", zh: "每日" },
+  "phone.progress.visual": { en: "Visual", es: "Visual", pt: "Visual", zh: "视觉" },
+  "phone.progress.checkin": { en: "Check-in", es: "Check-in", pt: "Check-in", zh: "签到" },
+  "phone.progress.news": { en: "News", es: "Noticias", pt: "Notícias", zh: "新闻" },
+  "phone.progress.edge": { en: "Edge", es: "Edge", pt: "Edge", zh: "Edge" },
+  "phone.progress.reset": { en: "Daily set", es: "Tareas del día", pt: "Conjunto diário", zh: "每日任务集" },
+  "phone.here": { en: "Bing on this phone", es: "Bing en este celular", pt: "Bing neste celular", zh: "此手机上的 Bing" },
+  "phone.hint": { en: "Requires the same Microsoft account signed into Bing on this phone.", es: "Requiere tener la misma cuenta Microsoft iniciada en Bing en este celular.", pt: "Requer a mesma conta Microsoft conectada ao Bing neste celular.", zh: "需要在此手机的 Bing 中登录相同的 Microsoft 账户。" },
+  "phone.checkin": { en: "Check-in", es: "Check-in", pt: "Check-in", zh: "签到" },
+  "phone.news": { en: "Read news", es: "Leer noticias", pt: "Ler notícias", zh: "阅读新闻" },
+  "phone.install": { en: "Install Bing", es: "Instalar Bing", pt: "Instalar o Bing", zh: "安装 Bing" },
+  "phone.login": { en: "Sign in to Bing", es: "Iniciar sesión en Bing", pt: "Entrar no Bing", zh: "登录 Bing" },
+  "phone.ready": { en: "Ready", es: "Listo", pt: "Pronto", zh: "就绪" },
+  "phone.verify": { en: "Check again", es: "Volver a comprobar", pt: "Verificar novamente", zh: "重新检查" },
+  "phone.runpc": { en: "Run on PC", es: "Ejecutar en el PC", pt: "Executar no PC", zh: "在电脑上运行" },
+  "phone.start": { en: "Start run", es: "Iniciar en PC", pt: "Iniciar no PC", zh: "开始运行" },
+  "phone.tasks": { en: "Tasks only", es: "Solo tareas", pt: "Somente tarefas", zh: "仅任务" },
+  "phone.edge": { en: "Edge 30 min", es: "Edge 30 min", pt: "Edge 30 min", zh: "Edge 30 分钟" },
+  "phone.stop": { en: "Stop", es: "Parar", pt: "Parar", zh: "停止" },
+  "phone.activity": { en: "Activity", es: "Actividad", pt: "Atividade", zh: "活动" },
+  "phone.unlink": { en: "Unlink phone", es: "Desvincular celular", pt: "Desvincular celular", zh: "取消关联手机" },
+  "phone.linked": { en: "Linked to PC", es: "Vinculado al PC", pt: "Vinculado ao PC", zh: "已关联到电脑" },
+  "phone.qr": { en: "Scan QR", es: "Escanear QR", pt: "Escanear QR", zh: "扫描二维码" },
+  "phone.pc_running": { en: "PC is running", es: "El PC está ejecutándose", pt: "O PC está executando", zh: "电脑正在运行" },
+  "phone.linked_ready": { en: "Linked to PC · ready", es: "Vinculado al PC · listo", pt: "Vinculado ao PC · pronto", zh: "已关联到电脑 · 就绪" },
+  "phone.searches_saved": { en: "Searches: PC {pc} / mobile {mobile}", es: "Búsquedas: PC {pc} / móvil {mobile}", pt: "Pesquisas: PC {pc} / celular {mobile}", zh: "搜索：电脑 {pc} / 手机 {mobile}" },
+  "phone.pc_job": { en: "PC task: {kind}", es: "Tarea del PC: {kind}", pt: "Tarefa do PC: {kind}", zh: "电脑任务：{kind}" },
+  "bing.ok": { en: "Bing ready on this phone. Same Microsoft account as the PC.", es: "Bing listo en este celular. Misma cuenta Microsoft que en el PC.", pt: "Bing pronto neste celular. Mesma conta Microsoft do PC.", zh: "此手机上的 Bing 已就绪。与电脑使用相同的 Microsoft 账户。" },
+  "bing.not_installed": { en: "Microsoft Bing is not installed on this phone. Install it and sign in with the same Microsoft account.", es: "Microsoft Bing no está instalado en este celular. Instálalo e inicia sesión con la misma cuenta Microsoft.", pt: "O Microsoft Bing não está instalado neste celular. Instale-o e entre com a mesma conta Microsoft.", zh: "此手机未安装 Microsoft Bing。请安装并使用相同的 Microsoft 账户登录。" },
+  "bing.login_needed": { en: "Sign in to Bing on this phone with the same Microsoft account as the PC.", es: "Inicia sesión en Bing en este celular con la misma cuenta Microsoft del PC.", pt: "Entre no Bing neste celular com a mesma conta Microsoft do PC.", zh: "请在此手机的 Bing 中使用与电脑相同的 Microsoft 账户登录。" },
+  "bing.login_prompt": { en: "Sign in to Microsoft below, then tap Ready.", es: "Inicia sesión en Microsoft abajo y pulsa Listo.", pt: "Entre na Microsoft abaixo e toque em Pronto.", zh: "请在下方登录 Microsoft，然后点击就绪。" },
+  "bing.checking": { en: "Checking Microsoft session…", es: "Comprobando sesión Microsoft…", pt: "Verificando sessão da Microsoft…", zh: "正在检查 Microsoft 会话…" },
+  "bing.session_ready": { en: "Microsoft session ready on this phone.", es: "Sesión Microsoft lista en este celular.", pt: "Sessão da Microsoft pronta neste celular.", zh: "此手机上的 Microsoft 会话已就绪。" },
+  "bing.session_missing": { en: "No active Microsoft session detected yet. Complete sign-in and try again.", es: "Aún no se detecta la sesión Microsoft. Completa el login y vuelve a pulsar Listo.", pt: "Nenhuma sessão ativa da Microsoft detectada ainda. Conclua o login e tente novamente.", zh: "尚未检测到活动的 Microsoft 会话。请完成登录并重试。" },
+  "updates.phone_available": { en: "New mobile version ({tag}). Download APK?", es: "Nueva versión móvil ({tag}). ¿Descargar APK?", pt: "Nova versão móvel ({tag}). Baixar APK?", zh: "发现新手机版本（{tag}）。是否下载 APK？" },
+  "updates.phone_none": { en: "You already have the latest mobile version ({version}).", es: "Ya tienes la última versión móvil ({version}).", pt: "Você já tem a versão móvel mais recente ({version}).", zh: "你已安装最新手机版本（{version}）。" },
+  "updates.phone_error": { en: "Could not check GitHub updates.", es: "No se pudo consultar GitHub.", pt: "Não foi possível verificar atualizações no GitHub.", zh: "无法检查 GitHub 更新。" },
+  "gold_member": { en: "Gold Member", es: "Miembro Oro", pt: "Membro Ouro", zh: "黄金会员" },
+  "silver_member": { en: "Silver Member", es: "Miembro Plata", pt: "Membro Prata", zh: "白银会员" },
+  "bronze_member": { en: "Bronze Member", es: "Miembro Bronce", pt: "Membro Bronze", zh: "青铜会员" },
+  "pts_per_day": { en: "pts/day", es: "pts/día", pt: "pts/dia", zh: "积分/天" },
+  "recent_activity_verified": { en: "Recent activity (verified points / day)", es: "Actividad reciente (puntos verificados / día)", pt: "Atividade recente (pontos verificados / dia)", zh: "近期活动（每日已验证积分）" },
+  "stats.reset_btn": { en: "Reset chart / stats", es: "Reiniciar gráfico / stats", pt: "Redefinir gráfico / stats", zh: "重置图表 / 统计" },
+  "stats.reset_title": { en: "Reset statistics", es: "Reiniciar estadísticas", pt: "Redefinir estatísticas", zh: "重置统计数据" },
+  "stats.reset_desc": { en: "Choose which statistics or chart data you want to reset for this account:", es: "Elige qué estadísticas o datos del gráfico quieres reiniciar en esta cuenta:", pt: "Escolha quais estatísticas ou dados do gráfico deseja redefinir nesta conta:", zh: "选择要为此账户重置的统计或图表数据：" },
+  "stats.reset_scope_chart": { en: "Reset chart history (keep real balance)", es: "Reiniciar historial del gráfico (conservar saldo real)", pt: "Redefinir histórico do gráfico (manter saldo real)", zh: "重置图表历史记录（保留真实积分余额）" },
+  "stats.reset_scope_today": { en: "Reset today's earned points to 0", es: "Reiniciar los puntos ganados hoy a 0", pt: "Redefinir pontos ganhos hoje para 0", zh: "将今日获得的积分重置为 0" },
+  "stats.reset_scope_lifetime": { en: "Reset lifetime activity counters", es: "Reiniciar contadores históricos de actividad", pt: "Redefinir contadores de atividade histórica", zh: "重置累计活动计数器" },
+  "stats.reset_scope_all": { en: "Reset all statistics & chart", es: "Reiniciar todas las estadísticas y el gráfico", pt: "Redefinir todas as estatísticas e o gráfico", zh: "重置所有统计数据和图表" },
+  "stats.reset_confirm": { en: "Reset now", es: "Reiniciar ahora", pt: "Redefinir agora", zh: "立即重置" },
+  "phone.run_all": { en: "Auto-run all", es: "Auto-ejecutar todo", pt: "Auto-executar tudo", zh: "自动运行全部" },
+  "phone.claim": { en: "Claim points", es: "Reclamar puntos", pt: "Resgatar pontos", zh: "领取积分" },
+  "claim": { en: "Claim", es: "Reclamar", pt: "Resgatar", zh: "领取" },
+  "claim_sent": { en: "Claim task sent to phone.", es: "Tarea de reclamar enviada al celular.", pt: "Tarefa de resgate enviada ao celular.", zh: "领取积分任务已发送到手机。" },
+  "phone_all_sent": { en: "All mobile tasks sent to phone.", es: "Todas las tareas móviles enviadas al celular.", pt: "Todas as tarefas móveis enviadas ao celular.", zh: "所有移动任务已发送到手机。" },
+  "runtime.browser_hidden_on": { en: "Browser hidden mode: ON", es: "Modo navegador oculto: ACTIVADO", pt: "Modo navegador oculto: ATIVADO", zh: "隐藏浏览器模式：已开启" },
+  "runtime.browser_hidden_off": { en: "Browser hidden mode: OFF", es: "Modo navegador oculto: DESACTIVADO", pt: "Modo navegador oculto: DESATIVADO", zh: "隐藏浏览器模式：已关闭" },
+  "runtime.quest_detect_failed": { en: "Automatic quest detection failed", es: "Falló la detección automática de misiones", pt: "Falha na detecção automática de missões", zh: "自动检测任务失败" },
+  "runtime.webdriver_error": { en: "Error loading WebDriver", es: "Error al cargar WebDriver", pt: "Erro ao carregar o WebDriver", zh: "加载 WebDriver 出错" },
+  "runtime.refreshing_balance": { en: "Refreshing points balance…", es: "Actualizando saldo de puntos…", pt: "Atualizando saldo de pontos…", zh: "正在刷新积分余额…" },
+  "runtime.balance_updated": { en: "Points balance updated", es: "Saldo de puntos actualizado", pt: "Saldo de pontos atualizado", zh: "积分余额已更新" },
+  "runtime.switched_account": { en: "Switched to account", es: "Cambiado a la cuenta", pt: "Alternado para a conta", zh: "已切换到账户" },
+  "runtime.stats_reset": { en: "Statistics reset", es: "Estadísticas reiniciadas", pt: "Estatísticas redefinidas", zh: "统计数据已重置" },
+  "country.colombia": { en: "Colombia", es: "Colombia", pt: "Colômbia", zh: "哥伦比亚" },
+  "country.us": { en: "United States", es: "Estados Unidos", pt: "Estados Unidos", zh: "美国" },
+  "country.mexico": { en: "Mexico", es: "México", pt: "México", zh: "墨西哥" },
+  "country.spain": { en: "Spain", es: "España", pt: "Espanha", zh: "西班牙" },
+  "country.brazil": { en: "Brazil", es: "Brasil", pt: "Brasil", zh: "巴西" },
+  "country.argentina": { en: "Argentina", es: "Argentina", pt: "Argentina", zh: "阿根廷" },
+  "country.chile": { en: "Chile", es: "Chile", pt: "Chile", zh: "智利" },
+  "country.peru": { en: "Peru", es: "Perú", pt: "Peru", zh: "秘鲁" },
+  "country.uk": { en: "United Kingdom", es: "Reino Unido", pt: "Reino Unido", zh: "英国" },
+  "country.canada": { en: "Canada", es: "Canadá", pt: "Canadá", zh: "加拿大" },
+});
+
+Object.keys(UI_COPY).forEach(function (key) {
+  ["en", "es", "pt", "zh"].forEach(function (locale) {
+    I18N[locale][key] = UI_COPY[key][locale];
+  });
+});
+
 const _copyIndex = Object.create(null);
+function _normKeyText(s) {
+  return String(s || "").replace(/\s+/g, " ").trim();
+}
 Object.keys(UI_COPY).forEach(function (key) {
   Object.keys(UI_COPY[key]).forEach(function (locale) {
-    const value = UI_COPY[key][locale];
-    if (value) _copyIndex[String(value).trim()] = key;
+    const value = _normKeyText(UI_COPY[key][locale]);
+    if (value && !_copyIndex[value]) {
+      _copyIndex[value] = key;
+    }
+  });
+});
+Object.keys(I18N.en).forEach(function (key) {
+  ["en", "es", "pt", "zh"].forEach(function (locale) {
+    const value = _normKeyText(I18N[locale] && I18N[locale][key]);
+    if (value && !_copyIndex[value]) {
+      _copyIndex[value] = key;
+    }
   });
 });
 
@@ -461,8 +600,61 @@ Object.keys(LEGACY_COPY_KEYS).forEach(function (legacyKey) {
 
 function tr(value) {
   const source = String(value == null ? "" : value);
-  const key = _copyIndex[source.trim()];
-  return key ? (UI_COPY[key][_uiLang] || UI_COPY[key].en || source) : source;
+  const trimmed = _normKeyText(source);
+  if (!trimmed) return source;
+  const key = _copyIndex[trimmed];
+  if (!key) return source;
+  const table = (UI_COPY[key] || (I18N[_uiLang] && I18N[_uiLang][key] ? { [_uiLang]: I18N[_uiLang][key], en: I18N.en[key] } : null));
+  if (!table) return source;
+  const translated = table[_uiLang] || table.en || trimmed;
+  const lead = (source.match(/^\s*/) || [""])[0];
+  const trail = (source.match(/\s*$/) || [""])[0];
+  return lead + translated + trail;
+}
+
+// Python sends activity/log details as readable English strings. Translate
+// those runtime messages at the final rendering boundary so logs, history and
+// progress cards follow the selected UI language too.
+function translate_runtime_text(value) {
+  let text = String(value == null ? "" : value);
+  const exact = tr(text);
+  if (exact !== text) return exact;
+  const replacements = [
+    [/^OK\s*[—-]/i, t("runtime.ok_prefix") + " —"],
+    [/^Skipped\s*[—-]/i, t("runtime.skipped_prefix") + " —"],
+    [/^\[ERROR\]\s*/i, t("runtime.error_prefix") + ": "],
+    [/^\[WARNING\]\s*/i, t("runtime.warning_prefix") + ": "],
+    [/^\[INFO\]\s*/i, ""],
+    [/\bBrowser hidden mode:\s*ON\b/gi, t("runtime.browser_hidden_on")],
+    [/\bBrowser hidden mode:\s*OFF\b/gi, t("runtime.browser_hidden_off")],
+    [/\bAutomatic quest detection failed\b/gi, t("runtime.quest_detect_failed")],
+    [/\bError loading WebDriver\b/gi, t("runtime.webdriver_error")],
+    [/\bRefreshing points balance…?/gi, t("runtime.refreshing_balance")],
+    [/\bPoints balance updated\b/gi, t("runtime.balance_updated")],
+    [/\bSwitched to account\b/gi, t("runtime.switched_account")],
+    [/\bStatistics reset\b/gi, t("runtime.stats_reset")],
+    [/\bGold Member\b/gi, t("gold_member")],
+    [/\bSilver Member\b/gi, t("silver_member")],
+    [/\bBronze Member\b/gi, t("bronze_member")],
+    [/\bLevel\s+(\d+)\b/gi, (_uiLang === "zh" ? "等级 $1" : (_uiLang === "pt" ? "Nível $1" : (_uiLang === "es" ? "Nivel $1" : "Level $1")))],
+    [/\bpts\/day\b/gi, t("pts_per_day")],
+    [/\bOpening Edge\b/gi, t("runtime.opening_edge")],
+    [/\bEdge is ready\./gi, t("runtime.edge_ready")],
+    [/already complete today, skipping\./gi, t("runtime.already_complete")],
+    [/not listed on today's dashboard, skipping\./gi, t("runtime.not_listed")],
+    [/not complete, running\./gi, t("runtime.not_complete_running")],
+    [/\balready done\b/gi, t("runtime.already_done")],
+    [/\bcredited\b/gi, t("runtime.credited")],
+    [/\bVisual Search\b/gi, t("visual_searches")],
+    [/\bDaily Set\b/gi, t("daily_tasks")],
+    [/\bEdge browsing\b/gi, t("edge_minutes")],
+    [/\bBing app streak\b/gi, t("phone")],
+    [/\bCheck-in\b/gi, t("checkin")],
+    [/\bNews\b/g, t("news")],
+    [/\bMobile app\b/gi, t("label.mobile")],
+  ];
+  replacements.forEach(function (pair) { text = text.replace(pair[0], pair[1]); });
+  return text;
 }
 
 function tf(key, values) {
@@ -473,7 +665,15 @@ function tf(key, values) {
   return text;
 }
 
-let _uiLang = "en";
+let _uiLang = (function () {
+  try {
+    const saved = localStorage.getItem("ar_ui_lang");
+    if (saved && I18N[saved]) return saved;
+  } catch (e) {}
+  return resolve_lang_from_settings({});
+})();
+let _translationObserver = null;
+let _isTranslatingDom = false;
 
 function t(key) {
   const pack = I18N[_uiLang] || I18N.en;
@@ -485,76 +685,133 @@ function t(key) {
 
 function set_ui_lang(lang) {
   _uiLang = ["en", "es", "pt", "zh"].indexOf(lang) >= 0 ? lang : "en";
-  document.documentElement.lang = _uiLang;
-  refresh_language_options();
-  document.querySelectorAll("[data-i18n]").forEach(function (el) {
-    const key = el.getAttribute("data-i18n");
-    if (!key) return;
-    const translated = t(key);
-    // A missing legacy key must keep its original HTML text: the universal
-    // translator below can still translate that text, while rendering the key
-    // itself would expose implementation details to the user.
-    if (translated === key) return;
-    if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
-      el.placeholder = translated;
-    } else if (el.children.length) {
-      if (el.firstChild && el.firstChild.nodeType === Node.TEXT_NODE) {
-        el.firstChild.nodeValue = translated + " ";
-      }
-    } else {
-      el.textContent = translated;
-    }
-  });
-  translate_document();
-  const startLabel = document.querySelector("#start_btn .btn-label");
-  if (
-    startLabel &&
-    typeof runInProgress !== "undefined" &&
-    !runInProgress &&
-    typeof driverWarmingUp !== "undefined" &&
-    !driverWarmingUp
-  ) {
-    startLabel.textContent = t("run.start");
+  try {
+    localStorage.setItem("ar_ui_lang", _uiLang);
+  } catch (e) {}
+  if (document.documentElement) document.documentElement.lang = _uiLang;
+  _isTranslatingDom = true;
+  if (_translationObserver) {
+    try { _translationObserver.disconnect(); } catch (e) {}
   }
-  const tasksBtn = document.getElementById("tasks_only_btn");
-  if (tasksBtn) tasksBtn.textContent = t("run.tasks");
-  const stopLabel = document.querySelector("#stop_btn .stop-label");
-  if (stopLabel && !/Stopping|Parando/.test(stopLabel.textContent)) stopLabel.textContent = t("run.stop");
-  if (typeof update_status_indicator === "function") update_status_indicator();
-  if (typeof refresh_rewards_overview === "function") refresh_rewards_overview();
-  if (typeof refresh_phone_ui === "function") refresh_phone_ui();
-  if (typeof render_current_stats === "function" && typeof _last_dashboard_stats !== "undefined" && _last_dashboard_stats) render_current_stats(_last_dashboard_stats);
-  if (typeof render_history === "function") render_history();
+  try {
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+      const key = el.getAttribute("data-i18n");
+      if (!key) return;
+      const translated = t(key);
+      if (translated === key) return;
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+        el.placeholder = translated;
+      } else if (el.children.length) {
+        if (el.firstChild && el.firstChild.nodeType === Node.TEXT_NODE) {
+          el.firstChild.nodeValue = translated + " ";
+        }
+      } else {
+        el.textContent = translated;
+      }
+    });
+    document.querySelectorAll("[data-i18n-placeholder]").forEach(function (el) {
+      const key = el.getAttribute("data-i18n-placeholder");
+      if (key) el.placeholder = t(key);
+    });
+    document.querySelectorAll("[data-i18n-title]").forEach(function (el) {
+      const key = el.getAttribute("data-i18n-title");
+      if (key) {
+        el.title = t(key);
+        el.setAttribute("aria-label", t(key));
+      }
+    });
+    translate_document();
+    refresh_language_options();
+    const startLabel = document.querySelector("#start_btn .btn-label");
+    if (
+      startLabel &&
+      typeof runInProgress !== "undefined" &&
+      !runInProgress &&
+      typeof driverWarmingUp !== "undefined" &&
+      !driverWarmingUp
+    ) {
+      startLabel.textContent = t("run.start");
+    }
+    const tasksBtn = document.getElementById("tasks_only_btn");
+    if (tasksBtn) tasksBtn.textContent = t("run.tasks");
+    const stopLabel = document.querySelector("#stop_btn .stop-label");
+    if (stopLabel && !/Stopping|Parando/.test(stopLabel.textContent)) stopLabel.textContent = t("run.stop");
+    if (typeof update_status_indicator === "function") update_status_indicator();
+    if (typeof render_account_trigger === "function") render_account_trigger();
+    if (typeof render_account_menu === "function") render_account_menu();
+    if (typeof render_accounts_section === "function" && typeof accountsCache !== "undefined") {
+      render_accounts_section(accountsCache);
+    }
+    if (typeof render_manual_tasks === "function" && typeof _manual_tasks_cache !== "undefined" && _manual_tasks_cache) {
+      render_manual_tasks(_manual_tasks_cache);
+    }
+    if (typeof refresh_rewards_overview === "function") refresh_rewards_overview();
+    if (typeof refresh_phone_ui === "function") refresh_phone_ui();
+    if (typeof render_current_stats === "function" && typeof _last_dashboard_stats !== "undefined" && _last_dashboard_stats) render_current_stats(_last_dashboard_stats);
+    if (typeof render_history === "function") render_history();
+    if (typeof showAppVersion === "function") showAppVersion();
+    if (typeof updateBingUi === "function") updateBingUi();
+  } finally {
+    _isTranslatingDom = false;
+    start_translation_observer();
+  }
 }
 
 function resolve_lang_from_settings(settings) {
-  const pref = (settings && settings.ui_language) || "auto";
+  const s = settings || {};
+  if (s.ui_locale && ["en", "es", "pt", "zh"].indexOf(s.ui_locale) >= 0) return s.ui_locale;
+  const pref = String(s.ui_language || "auto").toLowerCase();
   if (["en", "es", "pt", "zh"].indexOf(pref) >= 0) return pref;
-  const blob = String(
-    (settings && (settings.windows_locale || settings.detected_locale)) ||
-      (typeof navigator !== "undefined" ? navigator.language : "") ||
-      ""
-  ).toLowerCase();
-  if (blob.indexOf("es") === 0 || blob.indexOf("-es") >= 0 || blob.indexOf("_es") >= 0) return "es";
-  if (blob.indexOf("pt") === 0 || blob.indexOf("-pt") >= 0 || blob.indexOf("_pt") >= 0) return "pt";
-  if (blob.indexOf("zh") === 0 || blob.indexOf("-zh") >= 0 || blob.indexOf("_zh") >= 0) return "zh";
+  const candidates = [
+    s.windows_locale,
+    s.detected_locale,
+    typeof navigator !== "undefined" ? navigator.language : "",
+  ];
+  for (let i = 0; i < candidates.length; i++) {
+    const raw = String(candidates[i] || "").trim().toLowerCase();
+    if (!raw) continue;
+    const primary = raw.split(/[-_.\s]/)[0];
+    if (["en", "es", "pt", "zh"].indexOf(primary) >= 0) return primary;
+  }
   return "en";
 }
 
 function translate_node(node) {
   if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
   if (["SCRIPT", "STYLE", "CODE", "PRE"].indexOf(node.tagName) >= 0) return;
+  if (node.tagName === "OPTION" && node.hasAttribute("data-language-option")) return;
   ["title", "placeholder", "aria-label", "alt"].forEach(function (name) {
     if (node.hasAttribute && node.hasAttribute(name)) {
+      if (name === "placeholder" && node.hasAttribute("data-i18n-placeholder")) return;
+      if ((name === "title" || name === "aria-label") && node.hasAttribute("data-i18n-title")) return;
+      const origAttr = "data-i18n-orig-" + name;
+      const lastAttr = "data-i18n-last-" + name;
       const current = node.getAttribute(name);
-      const translated = tr(current);
-      if (translated !== current) node.setAttribute(name, translated);
+      const orig = (node.hasAttribute(origAttr) && current === node.getAttribute(lastAttr))
+        ? node.getAttribute(origAttr)
+        : current;
+      const translated = tr(orig);
+      if (translated !== orig || node.hasAttribute(origAttr)) {
+        node.setAttribute(origAttr, orig);
+        node.setAttribute(lastAttr, translated);
+        if (translated !== current) node.setAttribute(name, translated);
+      }
     }
   });
+  const hasExplicitKey = node.hasAttribute && node.hasAttribute("data-i18n");
   Array.prototype.forEach.call(node.childNodes, function (child) {
     if (child.nodeType === Node.TEXT_NODE) {
-      const translated = tr(child.nodeValue);
-      if (translated !== child.nodeValue) child.nodeValue = translated;
+      if (hasExplicitKey) return;
+      const current = child.nodeValue;
+      const orig = (child.__i18nOrig && current === child.__i18nLast)
+        ? child.__i18nOrig
+        : current;
+      const translated = tr(orig);
+      if (translated !== orig || child.__i18nOrig) {
+        child.__i18nOrig = orig;
+        child.__i18nLast = translated;
+        if (translated !== current) child.nodeValue = translated;
+      }
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       translate_node(child);
     }
@@ -563,41 +820,71 @@ function translate_node(node) {
 
 function translate_document() {
   if (typeof document === "undefined" || !document.body) return;
-  document.title = tr(document.title);
+  if (document.title) {
+    const origTitle = (document.__i18nOrigTitle && document.title === document.__i18nLastTitle)
+      ? document.__i18nOrigTitle
+      : document.title;
+    const nextTitle = tr(origTitle);
+    document.__i18nOrigTitle = origTitle;
+    document.__i18nLastTitle = nextTitle;
+    document.title = nextTitle;
+  }
   translate_node(document.body);
 }
 
-let _translationObserver = null;
 function start_translation_observer() {
-  if (_translationObserver || typeof MutationObserver === "undefined" || !document.body) return;
-  _translationObserver = new MutationObserver(function (mutations) {
-    mutations.forEach(function (mutation) {
-      if (mutation.type === "characterData") {
-        const parent = mutation.target.parentElement;
-        if (!parent || ["SCRIPT", "STYLE", "CODE", "PRE"].indexOf(parent.tagName) >= 0) return;
-        const translated = tr(mutation.target.nodeValue);
-        if (translated !== mutation.target.nodeValue) mutation.target.nodeValue = translated;
+  if (typeof MutationObserver === "undefined" || !document.body) return;
+  if (!_translationObserver) {
+    _translationObserver = new MutationObserver(function (mutations) {
+      if (_isTranslatingDom) return;
+      _isTranslatingDom = true;
+      try {
+        mutations.forEach(function (mutation) {
+          if (mutation.type === "characterData") {
+            const parent = mutation.target.parentElement;
+            if (!parent || ["SCRIPT", "STYLE", "CODE", "PRE"].indexOf(parent.tagName) >= 0) return;
+            if (parent.hasAttribute && (parent.hasAttribute("data-i18n") || parent.hasAttribute("data-language-option"))) return;
+            const current = mutation.target.nodeValue;
+            if (current === mutation.target.__i18nLast) return;
+            const translated = tr(current);
+            if (translated !== current) {
+              mutation.target.__i18nOrig = current;
+              mutation.target.__i18nLast = translated;
+              mutation.target.nodeValue = translated;
+            }
+          }
+          mutation.addedNodes.forEach(function (node) {
+            if (node.nodeType === Node.ELEMENT_NODE) translate_node(node);
+            if (node.nodeType === Node.TEXT_NODE && node.parentElement) {
+              const translated = tr(node.nodeValue);
+              if (translated !== node.nodeValue) {
+                node.__i18nOrig = node.nodeValue;
+                node.__i18nLast = translated;
+                node.nodeValue = translated;
+              }
+            }
+          });
+        });
+      } finally {
+        _isTranslatingDom = false;
       }
-      mutation.addedNodes.forEach(function (node) {
-        if (node.nodeType === Node.ELEMENT_NODE) translate_node(node);
-        if (node.nodeType === Node.TEXT_NODE && node.parentElement) {
-          const translated = tr(node.nodeValue);
-          if (translated !== node.nodeValue) node.nodeValue = translated;
-        }
-      });
     });
-  });
-  _translationObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+  try {
+    _translationObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+  } catch (e) {}
 }
 
 window.addEventListener("DOMContentLoaded", function () {
-  translate_document();
-  start_translation_observer();
+  set_ui_lang(_uiLang);
 });
 
 window.addEventListener("pywebviewready", function () {
   if (!window.pywebview || !pywebview.api || !pywebview.api.get_settings) return;
   pywebview.api.get_settings().then(function (settings) {
+    if (settings && settings.windows_locale) {
+      window.__arWindowsLocale = settings.windows_locale;
+    }
     set_ui_lang(resolve_lang_from_settings(settings || {}));
   }).catch(function () {
     translate_document();
@@ -616,11 +903,13 @@ function refresh_language_options() {
   if (!selector) return;
   const systemLanguage = resolve_lang_from_settings({
     ui_language: "auto",
-    windows_locale: typeof navigator !== "undefined" ? navigator.language : "en",
+    windows_locale: (window.__arWindowsLocale) || (typeof navigator !== "undefined" ? navigator.language : "en"),
   });
+  const autoOption = selector.querySelector('option[value="auto"]');
+  if (autoOption) autoOption.textContent = t("settings.language_auto");
   selector.querySelectorAll("option[data-language-option]").forEach(function (option) {
     const code = option.getAttribute("data-language-option");
     const names = UI_LANGUAGE_NAMES[code] || UI_LANGUAGE_NAMES.en;
-    option.textContent = `${names.native} (${names[systemLanguage] || names.en})`;
+    option.textContent = `${names.native} (${names[_uiLang] || names[systemLanguage] || names.en})`;
   });
 }

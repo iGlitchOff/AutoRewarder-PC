@@ -13,6 +13,43 @@ from selenium.webdriver.edge.service import Service
 from ..config import APP_DIR
 
 
+_CLOSED_BROWSER_NEEDLES = (
+    "no such window",
+    "target frame detached",
+    "web view not found",
+    "chrome not reachable",
+    "disconnected",
+    "invalid session id",
+    "session deleted",
+    "not connected to devtools",
+    "unable to connect",
+    "connection refused",
+    "maxretryerror",
+    "forcibly closed",
+)
+
+_CLOSED_BROWSER_EXC_NAMES = (
+    "nosuchwindowexception",
+    "invalidsessionidexception",
+    "maxretryerror",
+    "newconnectionerror",
+    "connectionrefusederror",
+    "connectionreseterror",
+    "protocolerror",
+)
+
+
+def is_browser_closed_error(exc: Exception) -> bool:
+    """Return True if *exc* indicates the browser window or WebDriver session was closed."""
+    if exc is None:
+        return False
+    cls_name = exc.__class__.__name__.lower()
+    if any(name in cls_name for name in _CLOSED_BROWSER_EXC_NAMES):
+        return True
+    msg = str(exc).lower()
+    return any(needle in msg for needle in _CLOSED_BROWSER_NEEDLES)
+
+
 class DriverManager:
     """
     Manages the Selenium WebDriver for MS Edge.
@@ -21,6 +58,8 @@ class DriverManager:
     (i.e. one account). Switching account = rebuilding this manager with a
     different profile_path.
     """
+
+    is_browser_closed_error = staticmethod(is_browser_closed_error)
 
     def __init__(self, profile_path=None, hide_browser=False):
         """
@@ -32,7 +71,32 @@ class DriverManager:
         """
         self.profile_path = profile_path
         self.hide_browser = hide_browser
+        self._active_driver = None
+        self._driver_pids = set()
         self._native_pids = []
+        self._killing = False
+
+    @property
+    def user_data_dir(self):
+        return self.profile_path
+
+    @user_data_dir.setter
+    def user_data_dir(self, value):
+        self.profile_path = value
+
+    def _register_driver(self, driver):
+        """Record the active WebDriver instance and its service process PID."""
+        self._active_driver = driver
+        if driver is None:
+            return
+        try:
+            service = getattr(driver, "service", None)
+            process = getattr(service, "process", None)
+            pid = getattr(process, "pid", None)
+            if pid:
+                self._driver_pids.add(int(pid))
+        except Exception:
+            pass
 
     @staticmethod
     def _edge_version():
@@ -87,7 +151,14 @@ class DriverManager:
                 kwargs["service_args"] = ["--verbose"]
             except Exception:
                 pass
-        return Service(**kwargs)
+        service = Service(**kwargs)
+        if platform.system() == "Windows":
+            no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            try:
+                service.creation_flags = no_window
+            except Exception:
+                pass
+        return service
 
     @staticmethod
     def _session_died(err):
@@ -106,9 +177,11 @@ class DriverManager:
         )
 
     @staticmethod
-    def _wait_debug_port(port, timeout=10):
+    def _wait_debug_port(port, timeout=10, stop_event=None):
         deadline = time.time() + timeout
         while time.time() < deadline:
+            if stop_event is not None and stop_event.is_set():
+                return False
             sock = socket.socket()
             sock.settimeout(0.3)
             try:
@@ -197,11 +270,17 @@ class DriverManager:
         except Exception:
             pass
 
-    def _attach_fallback(self, hide=False):
+    def _attach_fallback(self, hide=False, stop_event=None):
         """Launch a real Edge with a debug port and attach Selenium to it."""
+        if stop_event is not None and stop_event.is_set():
+            raise RuntimeError("Run stopped before browser launch")
         port = self.debug_port()
-        _proc, port = self.start_native_edge("about:blank", port=port, hide=hide)
-        if not self._wait_debug_port(port, timeout=12):
+        _proc, port = self.start_native_edge(
+            "about:blank", port=port, stop_event=stop_event, hide=hide
+        )
+        if not self._wait_debug_port(port, timeout=12, stop_event=stop_event):
+            if stop_event is not None and stop_event.is_set():
+                raise RuntimeError("Run stopped before browser launch")
             raise RuntimeError(
                 f"Edge opened but debug port {port} never accepted connections"
             )
@@ -224,7 +303,14 @@ class DriverManager:
     DESKTOP_WINDOW_SIZE = "1920,1080"
 
     def setup_driver(
-        self, headless=None, disable_identity=False, mobile=False, bing_app=False
+        self,
+        headless=None,
+        disable_identity=False,
+        mobile=False,
+        bing_app=False,
+        stop_event=None,
+        is_mobile=False,
+        background=False,
     ):
         """
         Set up the Selenium WebDriver for MS Edge using this manager's profile.
@@ -240,13 +326,22 @@ class DriverManager:
             bing_app: When True, use the Bing iOS app (BingSapphire) user
                 agent instead of Safari. Required for mobile check-in and
                 read-to-earn news. Implies mobile=True.
+            stop_event: Optional threading.Event to abort browser launch
+                immediately when a run is stopped.
+            is_mobile: Alias for mobile.
+            background: When True, use true Chromium headless mode (--headless=new)
+                for silent background scrapes so no window or taskbar icon appears.
 
         Returns:
             webdriver.Edge: The configured WebDriver instance.
 
         Raises:
-            RuntimeError: If profile_path is None (no account selected).
+            RuntimeError: If profile_path is None (no account selected) or if
+                stop_event is set before/during launch.
         """
+        if stop_event is not None and stop_event.is_set():
+            raise RuntimeError("Run stopped before browser launch")
+
         if not self.profile_path:
             raise RuntimeError(
                 "No account selected: cannot start the browser. "
@@ -255,6 +350,9 @@ class DriverManager:
 
         if headless is None:
             headless = self.hide_browser
+        if background:
+            headless = True
+        mobile = bool(mobile or is_mobile)
 
         previous_foreground = self._foreground_window()
 
@@ -267,7 +365,9 @@ class DriverManager:
         # "session not created: Chrome instance exited".
         self.close_running_edge()
         self._clear_profile_locks()
-        time.sleep(0.8)
+        if stop_event is not None and stop_event.is_set():
+            raise RuntimeError("Run stopped before browser launch")
+        time.sleep(0.4)
 
         def build_options(recovery_mode=False):
             options = Options()
@@ -308,7 +408,11 @@ class DriverManager:
                 )
                 options.add_argument("--disable-sync")
 
-            if headless:
+            if background:
+                options.add_argument("--headless=new")
+                options.add_argument("--disable-gpu")
+                options.add_argument("--window-position=-32000,-32000")
+            elif headless:
                 # Off-screen window, not --headless=new. Chromium headless
                 # often skips painting the Next.js /earn cards, so quizzes
                 # and puzzles never appear. An off-screen GPU window still
@@ -322,28 +426,60 @@ class DriverManager:
 
         last_err = None
         _driver = None
-        for attempt in range(3):
+        max_attempts = 1 if background else 3
+        for attempt in range(max_attempts):
+            if stop_event is not None and stop_event.is_set():
+                raise RuntimeError("Run stopped before browser launch")
+            service = None
             try:
+                service = self._edge_service(verbose=attempt == 2)
                 _driver = webdriver.Edge(
-                    service=self._edge_service(verbose=attempt == 2),
+                    service=service,
                     options=build_options(recovery_mode=attempt > 0),
                 )
+                self._register_driver(_driver)
                 last_err = None
                 break
             except Exception as err:
                 last_err = err
-                self.close_running_edge()
+                try:
+                    proc = getattr(service, "process", None)
+                    if proc and getattr(proc, "pid", None):
+                        self._driver_pids.add(int(proc.pid))
+                except Exception:
+                    pass
+                if stop_event is not None and stop_event.is_set():
+                    self.kill_now(wait=True)
+                    raise
+                self.close_running_edge(settle=False)
                 self._clear_profile_locks()
-                if self._session_died(err):
+                if not background and self._session_died(err):
+                    if stop_event is not None and stop_event.is_set():
+                        self.kill_now(wait=True)
+                        raise
                     try:
-                        _driver = self._attach_fallback(hide=headless)
+                        _driver = self._attach_fallback(
+                            hide=headless, stop_event=stop_event
+                        )
+                        self._register_driver(_driver)
                         last_err = None
                         break
                     except Exception as attach_err:
                         last_err = attach_err
-                        self.close_running_edge()
+                        if stop_event is not None and stop_event.is_set():
+                            self.kill_now(wait=True)
+                            raise
+                        self.close_running_edge(settle=False)
                         self._clear_profile_locks()
-                time.sleep(1.2 + attempt)
+                if attempt + 1 >= max_attempts:
+                    break
+                delay = 1.2 + attempt
+                if stop_event is not None:
+                    if stop_event.wait(delay):
+                        self.kill_now(wait=True)
+                        raise RuntimeError("Run stopped before browser launch")
+                else:
+                    time.sleep(delay)
         if _driver is None:
             raise last_err
 
@@ -465,7 +601,7 @@ class DriverManager:
         ]
         return "\n".join(lines)
 
-    def _run_kill(self, args, wait):
+    def _run_kill(self, args, wait=True, timeout=8):
         flags = self._KILL_FLAGS
         try:
             if wait:
@@ -473,7 +609,7 @@ class DriverManager:
                     args,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    timeout=8,
+                    timeout=timeout,
                     creationflags=flags,
                 )
             else:
@@ -486,38 +622,81 @@ class DriverManager:
         except Exception:
             pass
 
-    def kill_now(self, wait=False):
+    def _collect_and_clear_tracked_pids(self):
+        """Return all tracked driver and native Edge PIDs and reset tracking state."""
+        pids = set()
+        active = getattr(self, "_active_driver", None)
+        self._active_driver = None
+        if active is not None:
+            try:
+                service = getattr(active, "service", None)
+                proc = getattr(service, "process", None)
+                pid = getattr(proc, "pid", None)
+                if pid:
+                    pids.add(int(pid))
+            except Exception:
+                pass
+        for pid in list(getattr(self, "_driver_pids", ()) or ()):
+            try:
+                pids.add(int(pid))
+            except Exception:
+                pass
+        try:
+            self._driver_pids.clear()
+        except Exception:
+            self._driver_pids = set()
+        for pid in list(getattr(self, "_native_pids", ()) or ()):
+            try:
+                pids.add(int(pid))
+            except Exception:
+                pass
+        self._native_pids = []
+        return pids
+
+    def kill_now(self, wait=True):
         """
         Kill WebDriver and this profile's Edge, including the real foreground
         Edge used for the 30-minute streak.
 
-        wait=True on app shutdown so the killer finishes before this process
-        dies. wait=False on Stop so the UI returns immediately; the killer
-        is launched breakaway so it still completes if the window then closes.
+        Defaults to wait=True so kills complete synchronously and never race
+        with a subsequent setup_driver() call for the next phase.
         """
-        if platform.system() == "Windows":
-            for pid in list(getattr(self, "_native_pids", []) or []):
-                self._run_kill(["taskkill", "/F", "/PID", str(pid), "/T"], wait)
-            self._native_pids = []
-            self._run_kill(["taskkill", "/F", "/IM", "msedgedriver.exe", "/T"], wait)
-            profile = ""
-            if self.profile_path:
-                profile = os.path.abspath(self.profile_path)
-            command = self._edge_kill_powershell(profile=profile)
-            self._run_kill(
-                [
-                    "powershell.exe",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    command,
-                ],
-                wait,
-            )
-        self._clear_profile_locks()
+        self._killing = True
+        try:
+            pids = self._collect_and_clear_tracked_pids()
+            if platform.system() == "Windows":
+                for pid in pids:
+                    self._run_kill(
+                        ["taskkill", "/F", "/PID", str(pid), "/T"],
+                        wait=wait,
+                        timeout=3,
+                    )
+                self._run_kill(
+                    ["taskkill", "/F", "/IM", "msedgedriver.exe", "/T"],
+                    wait=wait,
+                    timeout=3,
+                )
+                profile = ""
+                if self.profile_path:
+                    profile = os.path.abspath(self.profile_path)
+                command = self._edge_kill_powershell(profile=profile)
+                self._run_kill(
+                    [
+                        "powershell.exe",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        command,
+                    ],
+                    wait=wait,
+                    timeout=8,
+                )
+            self._clear_profile_locks()
+        finally:
+            self._killing = False
 
     @classmethod
-    def kill_all_autorewarder_edge(cls, wait=False):
+    def kill_all_autorewarder_edge(cls, wait=True):
         """Kill every Edge bound to AutoRewarder account profiles."""
         if platform.system() != "Windows":
             return
@@ -554,14 +733,28 @@ class DriverManager:
 
     def close_running_edge(self, settle=True):
         """Close orphaned Edge / WebDriver processes for this account."""
+        pids = self._collect_and_clear_tracked_pids()
         if platform.system() != "Windows":
             return 0
 
         flags = 0x08000000
+        for pid in pids:
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid), "/T"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=3,
+                    creationflags=flags,
+                )
+            except Exception:
+                pass
+
         try:
             subprocess.run(
                 ["taskkill", "/F", "/IM", "msedgedriver.exe", "/T"],
-                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 timeout=3,
                 creationflags=flags,
             )
@@ -569,21 +762,8 @@ class DriverManager:
             pass
 
         if self.profile_path:
-            profile = os.path.abspath(self.profile_path).replace("'", "''")
-            # Kill: (1) Edge bound to this account profile, (2) any Selenium-
-            # launched Edge (compat-relaunch orphans often drop --user-data-dir
-            # from the command line).
-            command = (
-                f"$profile = '{profile}'; "
-                "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" "
-                "-ErrorAction SilentlyContinue | "
-                "Where-Object { "
-                '$_.CommandLine -like "*$profile*" -or '
-                "$_.CommandLine -like '*--autorewarder-session*' "
-                "} | "
-                "ForEach-Object { Stop-Process -Id $_.ProcessId -Force "
-                "-ErrorAction SilentlyContinue }"
-            )
+            profile = os.path.abspath(self.profile_path)
+            command = self._edge_kill_powershell(profile=profile)
             try:
                 subprocess.run(
                     [
@@ -593,9 +773,9 @@ class DriverManager:
                         "-Command",
                         command,
                     ],
-                    capture_output=True,
-                    text=True,
-                    timeout=4,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=8,
                     creationflags=flags,
                 )
             except Exception:
@@ -650,11 +830,13 @@ class DriverManager:
             "--disable-background-mode",
             f"--remote-debugging-port={port}",
             "--remote-allow-origins=*",
-            "--start-maximized",
-            url or "https://www.bing.com/?form=EDGNTC",
         ]
         if hide:
-            args.insert(-1, "--window-position=-32000,-32000")
+            args.append("--window-position=-32000,-32000")
+            args.append("--window-size=1280,800")
+        else:
+            args.append("--start-maximized")
+        args.append(url or "https://www.bing.com/?form=EDGNTC")
         creationflags = 0
         startupinfo = None
         if platform.system() == "Windows":
@@ -700,4 +882,6 @@ class DriverManager:
             options.binary_location = binary
         options.add_experimental_option("debuggerAddress", f"127.0.0.1:{int(port)}")
         options.add_argument("--edge-skip-compat-layer-relaunch")
-        return webdriver.Edge(service=self._edge_service(), options=options)
+        driver = webdriver.Edge(service=self._edge_service(), options=options)
+        self._register_driver(driver)
+        return driver

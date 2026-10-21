@@ -1,13 +1,17 @@
 [Setup]
 AppName=AutoRewarder
 AppId=AutoRewarder
-AppVersion=4.3.65
-AppPublisher=Sino Safarov
+AppVersion=4.3.68
+AppPublisher=iGlitchOff
 AppPublisherURL=https://github.com/iGlitchOn/AutoRewarder-PC
 DefaultDirName={pf}\AutoRewarder
 DefaultGroupName=AutoRewarder
 OutputDir=dist
 OutputBaseFilename=AutoRewarder-Setup
+UninstallDisplayIcon={app}\AutoRewarder.exe
+UninstallDisplayName=AutoRewarder
+CloseApplications=force
+RestartApplications=no
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -18,9 +22,20 @@ LicenseFile=LICENSE
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "portuguese"; MessagesFile: "compiler:Languages\Portuguese.isl"
+
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\_internal"
+Type: filesandordirs; Name: "{app}\gui"
+Type: filesandordirs; Name: "{app}\assets"
+Type: filesandordirs; Name: "{app}\datasets"
+Type: files; Name: "{app}\apply-normal-update.cmd"
+Type: files; Name: "{app}\AutoRewarder-phone.apk"
 
 [Files]
 Source: "dist\AutoRewarder\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\AutoRewarder-Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\AutoRewarder"; Filename: "{app}\AutoRewarder.exe"; IconFilename: "{app}\AutoRewarder.exe"
@@ -33,7 +48,7 @@ Name: "startmenu"; Description: "Create Start Menu shortcut"; GroupDescription: 
 
 [Run]
 Filename: "{app}\AutoRewarder.exe"; Description: "Launch AutoRewarder"; Flags: nowait postinstall skipifsilent
-  Filename: "https://github.com/iGlitchOn/AutoRewarder-PC/blob/main/USER_GUIDE.md"; Description: "Read User Guide on GitHub"; Flags: shellexec nowait postinstall
+  Filename: "https://github.com/iGlitchOn/AutoRewarder-PC/blob/main/USER_GUIDE.md"; Description: "Read User Guide on GitHub"; Flags: shellexec nowait postinstall skipifsilent unchecked
   Filename: "https://github.com/iGlitchOn/AutoRewarder-PC"; Description: "Open GitHub repository"; Flags: shellexec nowait postinstall skipifsilent unchecked
 Filename: "https://buymeacoffee.com/safarsin"; Description: "Support development (Buy me a coffee)"; Flags: shellexec nowait postinstall skipifsilent unchecked
 
@@ -44,6 +59,63 @@ Filename: "https://buymeacoffee.com/safarsin"; Description: "Support development
 Type: filesandordirs; Name: "{app}"
 
 [Code]
+procedure KillRunningProcesses;
+var
+  ResultCode: Integer;
+begin
+  Exec('taskkill.exe', '/F /IM AutoRewarder.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM AutoRewarder-Updater.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM msedgedriver.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Result := '';
+  Exec('taskkill.exe', '/F /IM AutoRewarder.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM AutoRewarder-Updater.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM msedgedriver.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+  FindRec: TFindRec;
+  StartupDir: String;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    Exec('taskkill.exe', '/F /IM AutoRewarder.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('taskkill.exe', '/F /IM AutoRewarder-Updater.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('taskkill.exe', '/F /IM msedgedriver.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'AutoRewarder');
+    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'AutoRewarderLogin');
+
+    StartupDir := ExpandConstant('{userstartup}');
+    if FindFirst(StartupDir + '\AutoRewarder*', FindRec) then
+    begin
+      try
+        repeat
+          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then
+            DeleteFile(StartupDir + '\' + FindRec.Name);
+        until not FindNext(FindRec);
+      finally
+        FindClose(FindRec);
+      end;
+    end;
+
+    if not UninstallSilent then
+    begin
+      if MsgBox('Do you also want to delete your saved accounts, browser profiles, and history in AppData?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      begin
+        DelTree(ExpandConstant('{localappdata}\AutoRewarder'), True, True, True);
+      end;
+    end;
+  end;
+end;
+
 procedure ExitSetupWithError(ErrorMsg: String);
 begin
   SuppressibleMsgBox(ErrorMsg, mbCriticalError, MB_OK, IDOK);

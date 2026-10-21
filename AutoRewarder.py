@@ -273,10 +273,9 @@ if __name__ == "__main__":
     if close_to_tray and not args.from_login:
         _install_tray(window)
     webview.start(icon=os.path.join(ASSETS_DIR, "icon.ico"))
-    
+
     # Ensure all Edge processes are killed when the application exits normally
     try:
         api.shutdown()
     except Exception as e:
         _boot_log(f"shutdown error: {e}")
-

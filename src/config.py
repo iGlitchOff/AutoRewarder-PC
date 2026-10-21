@@ -14,7 +14,7 @@ import sys
 # updates while retaining the custom mobile and desktop features.
 GITHUB_VERSION = "4.3"
 # This build is the first custom patch release on top of GitHub 4.3.
-CURRENT_VERSION = "4.3.67"
+CURRENT_VERSION = "4.3.68"
 REPO = "iGlitchOn/AutoRewarder-PC"
 
 PLATFORM_NAME = platform.system()

@@ -16,6 +16,31 @@ from selenium.webdriver.common.by import By
 
 from ..utils import human_typing, wait_or_stop
 from ..emulator import HumanBehavior
+try:
+    from ..emulator.driver import is_browser_closed_error
+except ImportError:
+
+    def is_browser_closed_error(exc: Exception) -> bool:
+        if exc is None:
+            return False
+        msg = str(exc).lower()
+        return any(
+            needle in msg
+            for needle in (
+                "no such window",
+                "target frame detached",
+                "web view not found",
+                "chrome not reachable",
+                "disconnected",
+                "invalid session id",
+                "session deleted",
+                "not connected to devtools",
+                "unable to connect",
+                "connection refused",
+                "maxretryerror",
+                "forcibly closed",
+            )
+        )
 
 # Rewards' "visual search streak" mission credits a search only when it starts
 # from the mission's own link: the Bing homepage carrying its promo code. The
@@ -417,6 +442,11 @@ class SearchEngine:
             except WebDriverException as e:
                 if stop_event is not None and stop_event.is_set():
                     return successful
+                if is_browser_closed_error(e):
+                    if stop_event is not None:
+                        stop_event.set()
+                    self._log("Browser window closed — stopping run.")
+                    return successful
                 short_error = str(e).split("\n")[0][:28]
                 self._log(f"[ERROR] WebDriver error on attempt #{i+1}: {short_error}")
                 self._add_to_history(
@@ -425,6 +455,11 @@ class SearchEngine:
 
             except Exception as e:
                 if stop_event is not None and stop_event.is_set():
+                    return successful
+                if is_browser_closed_error(e):
+                    if stop_event is not None:
+                        stop_event.set()
+                    self._log("Browser window closed — stopping run.")
                     return successful
                 self._log(f"[ERROR] Unknown error on attempt #{i+1}: {e}")
                 self._add_to_history(

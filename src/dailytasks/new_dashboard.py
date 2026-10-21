@@ -519,6 +519,14 @@ class NewDashboardDailySet:
             )
             return True
         except Exception as e:
+            from ..emulator.driver import is_browser_closed_error
+
+            if is_browser_closed_error(e):
+                stop_ev = getattr(self, "_active_stop_event", None)
+                if stop_ev is not None:
+                    stop_ev.set()
+                self._log("Browser window closed — stopping tasks.")
+                return False
             self._log(f"[WARNING] Navigation failed: {str(e).splitlines()[0][:160]}")
             return False
 
@@ -1959,7 +1967,7 @@ def run_native_edge_streak(logger, stop_event, minutes, driver_manager):
         nonlocal attached
         drv = attached
         attached = None
-        if drv is None or _stopped():
+        if drv is None:
             return
         try:
             drv.quit()
@@ -2006,7 +2014,14 @@ def run_native_edge_streak(logger, stop_event, minutes, driver_manager):
             edge = data.get("edge") if isinstance(data, dict) else None
             if isinstance(edge, (list, tuple)) and len(edge) == 2:
                 return int(edge[0]), int(edge[1])
-        except Exception:
+        except Exception as e:
+            from ..emulator.driver import is_browser_closed_error
+
+            if is_browser_closed_error(e) or (
+                native_proc is not None and native_proc.poll() is not None
+            ):
+                if stop_event is not None:
+                    stop_event.set()
             return None
         return None
 
@@ -2019,7 +2034,15 @@ def run_native_edge_streak(logger, stop_event, minutes, driver_manager):
             if _stopped():
                 log("Edge Browsing Streak stopped by user.")
                 return
+            if native_proc is not None and native_proc.poll() is not None:
+                if stop_event is not None:
+                    stop_event.set()
+                log("Edge window closed by user — stopping Edge Browsing Streak.")
+                return
             progress = _read_minutes(drv)
+            if _stopped():
+                log("Edge Browsing Streak stopped by user.")
+                return
             if progress:
                 done, total = progress
                 if last_done is None or done != last_done:
@@ -2056,17 +2079,18 @@ def run_native_edge_streak(logger, stop_event, minutes, driver_manager):
                 except Exception:
                     pass
             except Exception as e:
-                if _stopped():
-                    log("Edge Browsing Streak stopped by user.")
+                from ..emulator.driver import is_browser_closed_error
+
+                if (
+                    _stopped()
+                    or is_browser_closed_error(e)
+                    or (native_proc is not None and native_proc.poll() is not None)
+                ):
+                    if stop_event is not None:
+                        stop_event.set()
+                    log("Edge window closed by user — stopping Edge Browsing Streak.")
                     return
                 log(f"[WARNING] Edge streak navigation failed: {e}")
-                try:
-                    drv = _launch()
-                    if drv is None:
-                        log("Edge Browsing Streak stopped by user.")
-                        return
-                except Exception:
-                    pass
             if wait_or_stop(50, stop_event):
                 log("Edge Browsing Streak stopped by user.")
                 return

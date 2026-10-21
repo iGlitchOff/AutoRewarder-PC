@@ -99,12 +99,15 @@ class BingAppTasks:
 
     def __init__(self, logger=None):
         self.logger = logger
+        self._active_stop_event = None
 
     def _log(self, message):
         if self.logger:
             self.logger(message)
 
     def _stopped(self, stop_event):
+        if stop_event is not None:
+            self._active_stop_event = stop_event
         return stop_event is not None and stop_event.is_set()
 
     def _wait(self, seconds, stop_event):
@@ -131,6 +134,13 @@ class BingAppTasks:
                 pass
             return True
         except Exception as e:
+            from ..emulator.driver import is_browser_closed_error
+
+            if is_browser_closed_error(e):
+                if self._active_stop_event is not None:
+                    self._active_stop_event.set()
+                self._log("Browser window closed — stopping mobile app tasks.")
+                return False
             self._log(f"[WARNING] Navigation failed ({url}): {e}")
             return False
 

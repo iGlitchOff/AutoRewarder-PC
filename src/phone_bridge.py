@@ -719,13 +719,25 @@ class PhoneBridge:
                         job["ok"] = bool(body.get("ok"))
                         job["result"] = str(body.get("detail") or "")
                         job["event"].set()
+                    kind = (job.get("kind") if job else "job") or "job"
+                    ok = bool(body.get("ok"))
+                    detail = str(body.get("detail") or "")
+                    try:
+                        bridge.api._safe_log(
+                            f"Phone task '{kind}': {'OK' if ok else 'incomplete'}"
+                            + (f" — {detail}" if detail else "")
+                        )
+                        if ok and getattr(bridge.api, "daily_set", None) is not None:
+                            if kind in ("checkin", "all"):
+                                bridge.api.daily_set.mark_checkin_as_completed()
+                                bridge.api.daily_set.save_live_snapshot({"checkin": [1, 1]})
+                            if kind in ("news", "all"):
+                                bridge.api.daily_set.mark_news_as_completed()
+                    except Exception:
+                        pass
                     threading.Thread(
                         target=bridge._notify_ui,
-                        args=(
-                            job.get("kind") if job else "job",
-                            bool(body.get("ok")),
-                            str(body.get("detail") or ""),
-                        ),
+                        args=(kind, ok, detail),
                         daemon=True,
                     ).start()
                     return self._json(200, {"ok": True})
@@ -822,7 +834,7 @@ class PhoneBridge:
         except Exception:
             pass
         try:
-            if kind in ("checkin", "news", "returned from bing", "paired"):
+            if kind in ("checkin", "claim", "news", "all", "returned from bing", "paired"):
                 self.api._notify_progress()
         except Exception:
             pass
@@ -833,13 +845,31 @@ class PhoneBridge:
             if block:
                 print("Phone run blocked: " + block.get("message", ""))
                 return
+            window = getattr(self.api, "_webview_window", None)
+            if window is not None:
+                try:
+                    window.evaluate_js(
+                        "typeof set_running_ui==='function'&&set_running_ui(true);"
+                    )
+                except Exception:
+                    pass
             if mode == "start":
                 settings = self.api.global_settings.get_settings()
                 pc = int(settings.get("queries_pc") or 15)
                 mobile = int(settings.get("queries_mobile") or 15)
                 self.api.main(pc, mobile, False)
             elif mode == "edge":
-                self.api._run_edge_browse_if_needed()
+                self.api._stop_event.clear()
+                try:
+                    self.api._run_edge_browse_if_needed()
+                finally:
+                    if window is not None:
+                        try:
+                            window.evaluate_js(
+                                "typeof enable_start_button==='function'&&enable_start_button();"
+                            )
+                        except Exception:
+                            pass
             else:
                 self.api.main(0, 0, True)
         except Exception as e:

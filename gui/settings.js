@@ -18,7 +18,7 @@ function render_accounts_section(accounts) {
   if (!accounts || accounts.length === 0) {
     const empty = document.createElement('li');
     empty.className = 'accounts-empty';
-    empty.textContent = 'No accounts yet. Click “Add account” to create your first one.';
+    empty.textContent = t('accounts.empty_modal');
     list.appendChild(empty);
     return;
   }
@@ -37,8 +37,8 @@ function render_accounts_section(accounts) {
     const meta = document.createElement('div');
     meta.className = 'account-item-meta';
     meta.textContent =
-      (acc.is_current ? 'Current · ' : '') +
-      (acc.first_setup_done ? 'Ready' : 'Setup pending');
+      (acc.is_current ? t('account.current') : '') +
+      (acc.first_setup_done ? t('account.ready') : t('account.setup_pending'));
     info.appendChild(name);
     info.appendChild(meta);
     item.appendChild(info);
@@ -48,52 +48,52 @@ function render_accounts_section(accounts) {
 
     const renameBtn = document.createElement('button');
     renameBtn.className = 'icon-btn';
-    renameBtn.title = 'Rename';
-    renameBtn.setAttribute('aria-label', 'Rename');
+    renameBtn.title = t('account.rename');
+    renameBtn.setAttribute('aria-label', t('account.rename'));
     renameBtn.innerHTML = ACCOUNT_ICONS.rename;
     renameBtn.addEventListener('click', async () => {
       const newLabel = await prompt_modal(
-        'Rename account',
-        `Enter a new name for "${acc.label}".`,
+        t('account.rename_title'),
+        tf('account.rename_prompt', { name: acc.label }),
         acc.label,
-        { confirmLabel: 'Rename' }
+        { confirmLabel: t('account.rename') }
       );
       if (newLabel === null) return;
       const trimmed = String(newLabel).trim();
       if (!trimmed) return;
       pywebview.api.rename_account(acc.id, trimmed).then(ok => {
-        if (!ok) show_toast('Rename failed.', 'error');
-        else show_toast(`Renamed to "${trimmed}".`, 'success');
+        if (!ok) show_toast(t('account_rename_failed'), 'error');
+        else show_toast(tf('account_renamed', { name: trimmed }), 'success');
       });
     });
 
     const resetupBtn = document.createElement('button');
     resetupBtn.className = 'icon-btn';
-    resetupBtn.title = acc.first_setup_done ? 'Re-run setup' : 'Run setup';
+    resetupBtn.title = acc.first_setup_done ? t('account.rerun_setup') : t('account.run_setup');
     resetupBtn.setAttribute('aria-label', resetupBtn.title);
     resetupBtn.innerHTML = ACCOUNT_ICONS.setup;
     resetupBtn.addEventListener('click', () => {
-      show_toast(`Opening browser to set up "${acc.label}"…`, 'info', { duration: 6000 });
+      show_toast(tf('account.opening_setup', { name: acc.label }), 'info', { duration: 6000 });
       pywebview.api.rerun_setup(acc.id).then(ok => {
-        if (!ok) show_toast('Setup could not be started.', 'error');
+        if (!ok) show_toast(t('account_setup_failed_start'), 'error');
       });
     });
 
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'icon-btn danger';
-    deleteBtn.title = 'Delete';
-    deleteBtn.setAttribute('aria-label', 'Delete');
+    deleteBtn.title = t('account.delete');
+    deleteBtn.setAttribute('aria-label', t('account.delete'));
     deleteBtn.innerHTML = ACCOUNT_ICONS.trash;
     deleteBtn.addEventListener('click', async () => {
       const confirmed = await confirm_modal(
-        `Delete "${acc.label}"?`,
-        'This removes its browser profile, history, and daily-set status. This cannot be undone.',
-        { confirmLabel: 'Delete', danger: true }
+        tf('account.delete_question', { name: acc.label }),
+        t('account.delete_msg'),
+        { confirmLabel: t('account.delete'), danger: true }
       );
       if (!confirmed) return;
       pywebview.api.delete_account(acc.id).then(success => {
-        if (!success) show_toast('Delete failed.', 'error');
-        else show_toast(`"${acc.label}" deleted.`, 'success');
+        if (!success) show_toast(t('account_delete_failed'), 'error');
+        else show_toast(tf('account_deleted_named', { name: acc.label }), 'success');
       });
     });
 
