@@ -1695,7 +1695,7 @@ window.addEventListener('pywebviewready', function() {
     if (toggle) toggle.checked = Boolean(settings.hide_browser);
     const ver = document.getElementById('app_version');
     if (ver && settings.app_version) {
-      ver.textContent = 'Microsoft Rewards · PC control · ' + settings.app_version;
+      ver.textContent = 'Microsoft Rewards · ' + settings.app_version;
     }
     const langSel = document.getElementById('uiLanguageSelect');
     if (langSel) {

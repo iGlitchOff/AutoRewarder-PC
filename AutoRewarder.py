@@ -24,7 +24,7 @@ from datetime import datetime
 
 _SINGLE_INSTANCE_HANDLE = None
 _SINGLE_INSTANCE_MUTEX = "Local\\AutoRewarder.GUI.SingleInstance"
-_WINDOW_TITLE = "Rewards Control"
+_WINDOW_TITLE = "AutoRewarder"
 
 
 def _boot_log(message):

@@ -1,4 +1,4 @@
-/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.0). */
+/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.1). */
 function native() {
   try { return window.Android || null; } catch (e) { return null; }
 }
@@ -1035,12 +1035,12 @@ function applyMarket(market) {
 function showAppVersion() {
   const el = document.getElementById("app_version");
   if (!el) return;
-  let ver = "4.4.0";
+  let ver = "4.4.1";
   try {
     const n = native();
     if (n && n.appVersionName) ver = String(n.appVersionName() || ver);
   } catch (e) {}
-  el.textContent = "Microsoft Rewards · " + t("phone.brand") + " · " + ver;
+  el.textContent = "Microsoft Rewards · " + ver;
 }
 
 function askPending(kind) {
@@ -1511,7 +1511,7 @@ async function checkPhoneUpdate(manual) {
   }
   const n = native();
   try {
-    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.0") : "4.4.0";
+    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.1") : "4.4.1";
     const mineCode = n && n.appVersionCode ? Number(n.appVersionCode() || 0) : 0;
     const newerThanMine = function (update) {
       if (!update) return false;

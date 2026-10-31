@@ -126,8 +126,8 @@ I18N.zh = {
 // history and dashboard windows. The reverse index below lets a screen start
 // in English or Spanish and still change cleanly to any supported language.
 const UI_COPY = {
-  "app.title": { en: "Rewards Control", es: "Rewards Control", pt: "Rewards Control", zh: "Rewards Control" },
-  "app.companion": { en: "Rewards Companion", es: "Compañero de recompensas", pt: "Companheiro de recompensas", zh: "奖励助手" },
+  "app.title": { en: "AutoRewarder", es: "AutoRewarder", pt: "AutoRewarder", zh: "AutoRewarder" },
+  "app.companion": { en: "AutoRewarder", es: "AutoRewarder", pt: "AutoRewarder", zh: "AutoRewarder" },
   "settings": { en: "Settings", es: "Configuración", pt: "Configurações", zh: "设置" },
   "general": { en: "General", es: "General", pt: "Geral", zh: "常规" },
   "account": { en: "Account", es: "Cuenta", pt: "Conta", zh: "账户" },
@@ -258,7 +258,7 @@ const UI_COPY = {
   "open_on_login": { en: "Open AutoRewarder when you sign in", es: "Abrir AutoRewarder al iniciar sesión", pt: "Abrir o AutoRewarder ao entrar", zh: "登录时打开 AutoRewarder" },
   "search_terms": { en: "Search terms", es: "Términos de búsqueda", pt: "Termos de pesquisa", zh: "搜索词" },
   "ai_terms": { en: "Generate search terms with AI (LLM)", es: "Generar términos de búsqueda con IA (LLM)", pt: "Gerar termos de pesquisa com IA (LLM)", zh: "使用 AI（LLM）生成搜索词" },
-  "welcome": { en: "Welcome to Rewards Control", es: "Bienvenido a Rewards Control", pt: "Bem-vindo ao Rewards Control", zh: "欢迎使用 Rewards Control" },
+  "welcome": { en: "Welcome to AutoRewarder", es: "Bienvenido a AutoRewarder", pt: "Bem-vindo ao AutoRewarder", zh: "欢迎使用 AutoRewarder" },
   "person_icon_accounts": { en: "Use the person icon at the top to add or manage accounts.", es: "Usa el icono de persona de la parte superior para agregar o administrar cuentas.", pt: "Use o ícone de pessoa no topo para adicionar ou gerenciar contas.", zh: "使用顶部的人像图标添加或管理账户。" },
   "automatic_language": { en: "Automatic (Windows / region)", es: "Automático (Windows / región)", pt: "Automático (Windows / região)", zh: "自动（Windows / 地区）" },
   "language_hint": { en: "Automatic uses Windows / region. Applies to this PC and the linked phone.", es: "Automático usa Windows / región. Aplica a este PC y al celular vinculado.", pt: "Automático usa Windows / região. Aplica-se a este PC e ao celular vinculado.", zh: "自动模式使用 Windows / 地区设置，并应用于此电脑和关联手机。" },
@@ -476,7 +476,7 @@ Object.assign(UI_COPY, {
   "phone.points": { en: "Points", es: "Puntos", pt: "Pontos", zh: "积分" },
   "phone.total": { en: "Total points", es: "Puntos totales", pt: "Total de pontos", zh: "总积分" },
   "phone.today": { en: "Earned today", es: "Ganados hoy", pt: "Ganhos hoje", zh: "今日获得" },
-  "phone.brand": { en: "Microsoft Rewards · Mobile companion", es: "Microsoft Rewards · Compañero móvil", pt: "Microsoft Rewards · Companheiro móvel", zh: "Microsoft Rewards · 手机助手" },
+  "phone.brand": { en: "AutoRewarder", es: "AutoRewarder", pt: "AutoRewarder", zh: "AutoRewarder" },
   "phone.ready_state": { en: "Ready to run", es: "Listo para ejecutar", pt: "Pronto para executar", zh: "准备就绪" },
   "phone.setup_state": { en: "Setup pending", es: "Configuración pendiente", pt: "Configuração pendente", zh: "待设置" },
   "phone.by_microsoft": { en: "by Microsoft", es: "por Microsoft", pt: "pela Microsoft", zh: "由 Microsoft 提供" },
