@@ -2524,29 +2524,35 @@ class AutoRewarderAPI:
         Returns:
             dict: {ok (bool), id (str), label (str)} on success, or {ok: False, error: str} on failure.
         """
-        if self._run_lock.locked():
+        if not self._run_lock.acquire(blocking=False):
             self.log("[WARNING] Cannot add an account while the bot is running.")
             return {"ok": False, "error": "bot_running"}
 
-        previous_id = self.account_manager.current_id()
-        new_account = self.account_manager.create(label)
-        new_id = new_account["id"]
+        try:
+            previous_id = self.account_manager.current_id()
+            new_account = self.account_manager.create(label)
+            new_id = new_account["id"]
 
-        self.account_manager.select(new_id)
-        self._rebuild_account_context()
-        self._broadcast_account_ui()
-
-        success = self._run_first_setup_for_current()
-
-        if not success:
-            # Rollback: drop the new account and restore previous.
-            self.account_manager.delete(new_id)
-            self.account_manager.select(previous_id)
+            self.account_manager.select(new_id)
             self._rebuild_account_context()
-            self._broadcast_account_ui()
-            return {"ok": False, "error": "setup_failed", "id": new_id}
 
-        return {"ok": True, "id": new_id, "label": new_account["label"]}
+            success = self._run_first_setup_for_current()
+
+            if not success:
+                # Rollback: drop the new account and restore previous.
+                self.account_manager.delete(new_id)
+                self.account_manager.select(previous_id)
+                self._rebuild_account_context()
+                self._broadcast_account_ui()
+                return {"ok": False, "error": "setup_failed", "id": new_id}
+
+            self._broadcast_account_ui()
+            return {"ok": True, "id": new_id, "label": new_account["label"]}
+        finally:
+            try:
+                self._run_lock.release()
+            except Exception:
+                pass
 
     def switch_account(self, account_id):
         """
@@ -2670,26 +2676,31 @@ class AutoRewarderAPI:
         Returns:
             bool: True if setup succeeded, False on failure or if the bot is running.
         """
-        if self._run_lock.locked():
+        if not self._run_lock.acquire(blocking=False):
             self.log("[WARNING] Cannot re-run setup while the bot is running.")
             return False
-        if not self.account_manager.exists(account_id):
-            return False
+        try:
+            if not self.account_manager.exists(account_id):
+                return False
 
-        previous_id = self.account_manager.current_id()
-        if account_id != previous_id:
-            self.account_manager.select(account_id)
-            self._rebuild_account_context()
+            previous_id = self.account_manager.current_id()
+            if account_id != previous_id:
+                self.account_manager.select(account_id)
+                self._rebuild_account_context()
+
+            ok = self._run_first_setup_for_current()
+
+            if account_id != previous_id:
+                self.account_manager.select(previous_id)
+                self._rebuild_account_context()
             self._broadcast_account_ui()
 
-        ok = self._run_first_setup_for_current()
-
-        if account_id != previous_id:
-            self.account_manager.select(previous_id)
-            self._rebuild_account_context()
-            self._broadcast_account_ui()
-
-        return ok
+            return ok
+        finally:
+            try:
+                self._run_lock.release()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # First setup flow (scoped to the currently-active account)
@@ -2724,6 +2735,7 @@ class AutoRewarderAPI:
                 self.log("Edge: browser sign-in temporarily disabled for this setup.")
 
         setup_succeeded = False
+        reached_login_page = False
         setup_driver = None
 
         try:
@@ -2737,55 +2749,26 @@ class AutoRewarderAPI:
             return False
 
         try:
-            # Windows WAM can silently push an MSA identity even on a fresh
-            # profile. Before showing anything to the user, wipe every bit of
-            # state that could carry an identity forward (cookies, cache,
-            # storage) via the DevTools protocol.
             self.log("Clearing any cached Microsoft identity...")
             try:
-                setup_driver.get("about:blank")
-                time.sleep(0.5)
                 setup_driver.execute_cdp_cmd("Network.clearBrowserCookies", {})
-                setup_driver.execute_cdp_cmd("Network.clearBrowserCache", {})
             except Exception:
                 pass
 
-            # Explicit logout at the Microsoft endpoint, then re-clear cookies
-            # in case the logout page dropped new ones.
-            try:
-                setup_driver.get(
-                    "https://login.live.com/logout.srf?wa=wsignout1.0&ct=0&rver=7.0"
-                )
-                time.sleep(3)
-                try:
-                    setup_driver.execute_cdp_cmd("Network.clearBrowserCookies", {})
-                except Exception:
-                    pass
-            except Exception:
-                pass
-
-            # Force the Microsoft sign-in form with prompt=login. This is an
-            # OAuth2 parameter that forces re-authentication no matter what
-            # cached/WAM session exists. The wreply sends the user back to
-            # Bing after a successful sign-in.
             self.log("Opening the Microsoft sign-in page...")
+            login_url = (
+                "https://login.live.com/login.srf?"
+                "wa=wsignin1.0&wp=MBI_SSL&"
+                "wreply=https%3A%2F%2Frewards.bing.com%2F&"
+                "prompt=select_account"
+            )
             try:
-                setup_driver.get(
-                    "https://login.live.com/login.srf?"
-                    "wa=wsignin1.0&"
-                    "rpsnv=13&"
-                    "ct=0&"
-                    "rver=7.0&"
-                    "wp=MBI_SSL&"
-                    "wreply=https%3a%2f%2fwww.bing.com%2f&"
-                    "lc=1033&"
-                    "id=264960&"
-                    "mkt=en-us&"
-                    "prompt=login"
-                )
+                setup_driver.get(login_url)
             except Exception:
-                # Fallback if the forced-prompt URL fails.
-                setup_driver.get("https://login.live.com/")
+                setup_driver.get(
+                    "https://login.live.com/login.srf?prompt=select_account"
+                )
+            reached_login_page = True
 
             self.log("""Sign in with the Microsoft account for THIS profile.
 - Enter the email and password yourself; don't pick a suggested account.
@@ -2800,10 +2783,12 @@ class AutoRewarderAPI:
 
         except Exception as e:
             error_msg = str(e).lower()
-            if (
+            if reached_login_page and (
                 "target window already closed" in error_msg
                 or "disconnected" in error_msg
                 or "not reachable" in error_msg
+                or "invalid session id" in error_msg
+                or "no such window" in error_msg
             ):
                 setup_succeeded = True
             else:
@@ -3337,6 +3322,8 @@ class AutoRewarderAPI:
         balance_claimed = False
         try:
             if self._run_lock.locked() or self.is_driver_loading:
+                return
+            if self.account_meta is None or not self.account_meta.is_first_setup_done():
                 return
             if not self._balance_lock.acquire(blocking=False):
                 return

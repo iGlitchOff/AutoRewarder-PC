@@ -269,13 +269,15 @@ class DriverManager:
         except Exception:
             pass
 
-    def _attach_fallback(self, hide=False, stop_event=None):
+    def _attach_fallback(
+        self, hide=False, stop_event=None, initial_url="https://www.bing.com"
+    ):
         """Launch a real Edge with a debug port and attach Selenium to it."""
         if stop_event is not None and stop_event.is_set():
             raise RuntimeError("Run stopped before browser launch")
         port = self.debug_port()
         _proc, port = self.start_native_edge(
-            "about:blank", port=port, stop_event=stop_event, hide=hide
+            initial_url, port=port, stop_event=stop_event, hide=hide
         )
         if not self._wait_debug_port(port, timeout=12, stop_event=stop_event):
             if stop_event is not None and stop_event.is_set():
@@ -457,8 +459,16 @@ class DriverManager:
                         self.kill_now(wait=True)
                         raise
                     try:
+                        fallback_url = (
+                            "https://login.live.com/login.srf?wa=wsignin1.0&wp=MBI_SSL"
+                            "&wreply=https%3A%2F%2Frewards.bing.com%2F&prompt=select_account"
+                            if disable_identity
+                            else "https://www.bing.com"
+                        )
                         _driver = self._attach_fallback(
-                            hide=headless, stop_event=stop_event
+                            hide=headless,
+                            stop_event=stop_event,
+                            initial_url=fallback_url,
                         )
                         self._register_driver(_driver)
                         last_err = None
@@ -579,18 +589,22 @@ class DriverManager:
 
     @staticmethod
     def _edge_kill_powershell(profile=None, all_accounts=False):
-        needles = [
-            "--autorewarder-session",
-        ]
-        if profile:
-            needles.insert(0, profile)
-        if all_accounts:
-            needles.append("EdgeProfile")
+        if profile and not all_accounts:
+            needles = [profile]
+        else:
+            needles = ["--autorewarder-session", "EdgeProfile"]
+            if profile:
+                needles.insert(0, profile)
         lines = [
             "$needles = @("
             + ", ".join("'" + n.replace("'", "''") + "'" for n in needles)
             + ")",
-            "Get-Process msedgedriver -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue",
+        ]
+        if all_accounts:
+            lines.append(
+                "Get-Process msedgedriver -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"
+            )
+        lines += [
             "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" -ErrorAction SilentlyContinue |",
             "  Where-Object {",
             "    $cl = $_.CommandLine; if (-not $cl) { return $false }",
@@ -670,26 +684,21 @@ class DriverManager:
                         wait=wait,
                         timeout=3,
                     )
-                self._run_kill(
-                    ["taskkill", "/F", "/IM", "msedgedriver.exe", "/T"],
-                    wait=wait,
-                    timeout=3,
-                )
                 profile = ""
                 if self.profile_path:
                     profile = os.path.abspath(self.profile_path)
-                command = self._edge_kill_powershell(profile=profile)
-                self._run_kill(
-                    [
-                        "powershell.exe",
-                        "-NoProfile",
-                        "-NonInteractive",
-                        "-Command",
-                        command,
-                    ],
-                    wait=wait,
-                    timeout=8,
-                )
+                    command = self._edge_kill_powershell(profile=profile)
+                    self._run_kill(
+                        [
+                            "powershell.exe",
+                            "-NoProfile",
+                            "-NonInteractive",
+                            "-Command",
+                            command,
+                        ],
+                        wait=wait,
+                        timeout=8,
+                    )
             self._clear_profile_locks()
         finally:
             self._killing = False
@@ -748,17 +757,6 @@ class DriverManager:
                 )
             except Exception:
                 pass
-
-        try:
-            subprocess.run(
-                ["taskkill", "/F", "/IM", "msedgedriver.exe", "/T"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=3,
-                creationflags=flags,
-            )
-        except Exception:
-            pass
 
         if self.profile_path:
             profile = os.path.abspath(self.profile_path)
