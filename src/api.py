@@ -9,6 +9,7 @@ import math
 import random
 import ctypes
 import platform
+import shutil
 import subprocess
 import threading
 import webbrowser
@@ -20,11 +21,13 @@ from datetime import datetime
 # display-layer requirements.
 
 from .config import (
+    APP_DIR,
     GUI_DIR,
     REPO,
     CURRENT_VERSION,
     GITHUB_VERSION,
     JSON_FILE_PATH,
+    LOG_FILE_PATH,
     BASE_DIR,
     edge_profile_path,
     history_path,
@@ -74,6 +77,9 @@ POINTS_REFRESH_INTERVAL = 300.0
 _AUTOSTART_TASK_NAME = "AutoRewarder"
 _SYSTEMD_UNIT_NAME = "autorewarder"
 _LOGIN_RUN_VALUE = "AutoRewarderGUI"
+
+# Default min/max delay for normal manual searches, in seconds.
+DEFAULT_SEARCH_DELAY = (4.0, 10.0)
 
 # HH:MM validator — accepts 00:00..23:59.
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -135,6 +141,7 @@ class AutoRewarderAPI:
         # backend rendering a blank window after a few opens.
         self._stats_window = None
         self._history_window = None
+        self._background_logs_window = None
         self._driver = None
         self.is_driver_loading = False
         self._run_lock = threading.Lock()
@@ -593,6 +600,25 @@ class AutoRewarderAPI:
             text_select=True,
         )
 
+    def open_background_logs_window(self):
+        """Open (or refocus + reload) the background logs viewer window."""
+        import webview
+
+        url = os.path.join(GUI_DIR, "background_logs.html")
+        if self._reuse_window(self._background_logs_window, url):
+            return
+
+        self._background_logs_window = webview.create_window(
+            title="Background Logs",
+            url=url,
+            js_api=self,
+            width=700,
+            height=500,
+            resizable=True,
+            background_color="#0d1117",
+            text_select=True,
+        )
+
     def open_stats_window(self):
         """
         Open (or refocus + reload) the statistics dashboard window, docked to
@@ -708,8 +734,73 @@ class AutoRewarderAPI:
         return {"ok": True, "current": CURRENT_VERSION, "releases": releases}
 
     def open_link(self, url):
-        """Open a URL in the system default browser."""
-        webbrowser.open(url)
+        """Open a URL in the system default browser (PyInstaller-safe)."""
+        try:
+            if sys.platform == "linux":
+                command = shutil.which("xdg-open")
+                if command is None:
+                    self.log(f"[ERROR] Could not find xdg-open to open {url}")
+                    print(f"[ERROR] Could not find xdg-open to open {url}")
+                    return False
+
+                env = os.environ.copy()
+                if getattr(sys, "frozen", False):
+                    lp_orig = env.get("LD_LIBRARY_PATH_ORIG")
+                    if lp_orig is not None:
+                        env["LD_LIBRARY_PATH"] = lp_orig
+                    else:
+                        env.pop("LD_LIBRARY_PATH", None)
+
+                    if "XDG_DATA_DIRS" in env:
+                        meipass = getattr(sys, "_MEIPASS", None)
+                        if meipass:
+                            clean_paths = [
+                                p
+                                for p in env["XDG_DATA_DIRS"].split(":")
+                                if not p.startswith(meipass)
+                            ]
+                            if not clean_paths:
+                                clean_paths = ["/usr/local/share", "/usr/share"]
+                            env["XDG_DATA_DIRS"] = ":".join(clean_paths)
+
+                subprocess.Popen(
+                    [command, url],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    env=env,
+                )
+                return True
+            return webbrowser.open(url)
+        except OSError as e:
+            self.log(f"[ERROR] Failed to open {url}: {e}")
+            print(f"[ERROR] Failed to open {url}: {e}")
+            return False
+
+    def get_app_info(self):
+        """Return version and storage details for the About panel."""
+        return {
+            "version": CURRENT_VERSION,
+            "app_dir": APP_DIR,
+            "repo_url": f"https://github.com/{REPO}",
+            "platform": platform.system(),
+        }
+
+    def open_data_folder(self):
+        """Open the app data folder in the OS file manager."""
+        try:
+            if sys.platform == "win32":
+                os.startfile(APP_DIR)
+            else:
+                subprocess.Popen(
+                    ["xdg-open", APP_DIR],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            return True
+        except Exception as e:
+            self.log(f"[ERROR] Could not open the data folder: {e}")
+            return False
 
     def download_and_install_update(self, url, asset_name):
         """Download and apply the matching normal or portable PC package."""
@@ -820,15 +911,22 @@ class AutoRewarderAPI:
         contain that helper yet; they keep the previous in-process fallback
         until the first external update installs it.
         """
-        helper = os.path.join(os.path.dirname(sys.executable), "AutoRewarder-Updater.exe")
+        helper = os.path.join(
+            os.path.dirname(sys.executable), "AutoRewarder-Updater.exe"
+        )
         if os.path.isfile(helper):
             language = self.ui_locale()
             args = [
-                "--url", str(url or ""),
-                "--asset", str(asset_name or ""),
-                "--parent-pid", str(os.getpid()),
-                "--language", language,
-                "--target", sys.executable,
+                "--url",
+                str(url or ""),
+                "--asset",
+                str(asset_name or ""),
+                "--parent-pid",
+                str(os.getpid()),
+                "--language",
+                language,
+                "--target",
+                sys.executable,
             ]
             target_dir = os.path.dirname(sys.executable)
             needs_elevation = False
@@ -844,8 +942,11 @@ class AutoRewarderAPI:
 
             if needs_elevation:
                 import ctypes
+
                 params = " ".join(f'"{a}"' for a in args)
-                ctypes.windll.shell32.ShellExecuteW(None, "runas", helper, params, target_dir, 1)
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "runas", helper, params, target_dir, 1
+                )
             else:
                 subprocess.Popen(
                     [helper] + args,
@@ -912,9 +1013,7 @@ class AutoRewarderAPI:
         pending = self._pending_update or {}
         if not pending.get("url") or not pending.get("asset_name"):
             return {"ok": False, "error": "No update package selected."}
-        return self.download_and_install_update(
-            pending["url"], pending["asset_name"]
-        )
+        return self.download_and_install_update(pending["url"], pending["asset_name"])
 
     def restore_after_update_error(self):
         """Return to the main UI if the update cannot be applied."""
@@ -944,8 +1043,7 @@ class AutoRewarderAPI:
             return
         try:
             window.evaluate_js(
-                "update_progress(%s, %s)"
-                % (json.dumps(stage), json.dumps(progress))
+                "update_progress(%s, %s)" % (json.dumps(stage), json.dumps(progress))
             )
         except Exception:
             pass
@@ -1073,7 +1171,12 @@ class AutoRewarderAPI:
         settings["ui_language"] = lang
         self.global_settings.save_settings(settings)
         resolved = self.ui_locale()
-        for win in (self._webview_window, self._stats_window, self._history_window):
+        for win in (
+            self._webview_window,
+            self._stats_window,
+            self._history_window,
+            self._background_logs_window,
+        ):
             if win is not None:
                 try:
                     win.evaluate_js(
@@ -1189,6 +1292,38 @@ class AutoRewarderAPI:
             self.log(f"[WARNING] Failed to save search counts: {e}")
             return False
 
+    def get_manual_search_delay(self):
+        """
+        Return the min/max delay for normal manual searches, in seconds.
+
+        Returns:
+            dict: {"minimum": min_delay, "maximum": max_delay}
+        """
+        minimum, maximum = self.global_settings.get_manual_search_delay()
+        return {"minimum": minimum, "maximum": maximum}
+
+    def set_manual_search_delay(self, minimum, maximum):
+        """
+        Persist the min/max delay for normal manual searches, in seconds.
+
+        Returns:
+            bool: True if successfully saved, False otherwise.
+        """
+        try:
+            return self.global_settings.set_manual_search_delay(minimum, maximum)
+        except Exception as e:
+            self.log(f"[WARNING] Failed to save manual search delay: {e}")
+            return False
+
+    def get_star_prompt_state(self):
+        return self.global_settings.get_star_prompt_state()
+
+    def postpone_star_prompt(self):
+        return self.global_settings.postpone_star_prompt()
+
+    def disable_star_prompt(self):
+        return self.global_settings.disable_star_prompt()
+
     # ------------------------------------------------------------------
     # Exposed to JS: LLM-generated search terms + locale
     # ------------------------------------------------------------------
@@ -1199,14 +1334,22 @@ class AutoRewarderAPI:
 
         Returns:
             dict: use_llm_queries, llm_provider, llm_model, llm_api_key,
+            llm_base_url,
             search_locale, detected_locale, effective_locale.
         """
         cfg = self.global_settings.get_llm_config()
         cfg["effective_locale"] = self.global_settings.get_effective_locale()
+        cfg["default_models"] = dict(llm.DEFAULT_MODELS)
         return cfg
 
     def set_llm_config(
-        self, use_llm_queries, provider, model, api_key, search_locale="auto"
+        self,
+        use_llm_queries,
+        provider,
+        model,
+        api_key,
+        search_locale="auto",
+        base_url="",
     ):
         """
         Persist the LLM query-generation config from the Settings modal.
@@ -1216,7 +1359,7 @@ class AutoRewarderAPI:
         """
         try:
             self.global_settings.set_llm_config(
-                use_llm_queries, provider, model, api_key, search_locale
+                use_llm_queries, provider, model, api_key, search_locale, base_url
             )
             state = "ON" if use_llm_queries else "OFF"
             self.log(f"LLM query generation: {state} ({provider}).")
@@ -1224,6 +1367,13 @@ class AutoRewarderAPI:
         except Exception as e:
             self.log(f"[WARNING] Failed to save LLM config: {e}")
             return False
+
+    def list_llm_models(self, provider, api_key, base_url=""):
+        """
+        Fetch the chat models `api_key` can use at `provider`, for the model
+        picker in Settings > Search terms. Never raises.
+        """
+        return llm.list_models(provider, api_key, base_url, logger=self.log)
 
     def set_detected_locale(self, locale):
         """
@@ -1361,10 +1511,15 @@ class AutoRewarderAPI:
         return True
 
     def close_secondary_windows(self):
-        """Close Statistics and History so no pywebview child survives us."""
-        windows = (self._stats_window, self._history_window)
+        """Close Statistics, History, and Background Logs so no pywebview child survives us."""
+        windows = (
+            self._stats_window,
+            self._history_window,
+            self._background_logs_window,
+        )
         self._stats_window = None
         self._history_window = None
+        self._background_logs_window = None
         for window in windows:
             if window is None:
                 continue
@@ -2693,6 +2848,35 @@ class AutoRewarderAPI:
         return self.history.get_history()
 
     # ------------------------------------------------------------------
+    # Background logs
+    # ------------------------------------------------------------------
+
+    def get_background_logs(self):
+        """
+        Return the last 1000 lines of the background log file.
+
+        Returns:
+            dict: {"ok": True, "content": str} on success,
+                or {"ok": False, "error": str} on failure.
+        """
+        if not os.path.exists(LOG_FILE_PATH):
+            return {"ok": True, "content": ""}
+
+        try:
+            with open(LOG_FILE_PATH, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                return {
+                    "ok": True,
+                    "content": "".join(lines[-1000:]),
+                }
+        except Exception as e:
+            print(f"[ERROR] Error reading background logs: {e}")
+            return {
+                "ok": False,
+                "error": f"[ERROR] Error reading background logs: {e}",
+            }
+
+    # ------------------------------------------------------------------
     # Statistics (scoped to current account)
     # ------------------------------------------------------------------
 
@@ -3157,9 +3341,7 @@ class AutoRewarderAPI:
             if not self._balance_lock.acquire(blocking=False):
                 return
             balance_claimed = True
-            driver = self.driver_manager.setup_driver(
-                headless=True, background=True
-            )
+            driver = self.driver_manager.setup_driver(headless=True, background=True)
             live = self.daily_set.collect_for_you(driver)
             if self.account_manager.current_id() != account_id:
                 return
@@ -3461,7 +3643,12 @@ class AutoRewarderAPI:
         return wait_or_stop(seconds, self._stop_event)
 
     def _run_advanced_schedule(
-        self, pc_count, mobile_count, duration_hours, queries_per_hour
+        self,
+        pc_count,
+        mobile_count,
+        duration_hours,
+        queries_per_hour,
+        search_delay_range=DEFAULT_SEARCH_DELAY,
     ):
         """
         Drip-feed queries across a duration using the GUI run pipeline.
@@ -3471,6 +3658,7 @@ class AutoRewarderAPI:
             mobile_count (int): total Mobile queries to run
             duration_hours (float|int): how many hours to spread the queries across
             queries_per_hour (int): target queries per hour (overrides duration_hours if > 0)
+            search_delay_range (tuple): the range of delays to use for each search
         """
         try:
             pc = max(0, int(pc_count or 0))
@@ -3542,10 +3730,20 @@ class AutoRewarderAPI:
             )
 
             if batch_pc > 0 and not self._stop_event.is_set():
-                self._run_phase(mobile=False, count=batch_pc, do_daily_set=True)
+                self._run_phase(
+                    mobile=False,
+                    count=batch_pc,
+                    do_daily_set=True,
+                    search_delay_range=search_delay_range,
+                )
 
             if batch_mobile > 0 and not self._stop_event.is_set():
-                self._run_phase(mobile=True, count=batch_mobile, do_daily_set=False)
+                self._run_phase(
+                    mobile=True,
+                    count=batch_mobile,
+                    do_daily_set=False,
+                    search_delay_range=search_delay_range,
+                )
 
             pc_left -= batch_pc
             mobile_left -= batch_mobile
@@ -3563,7 +3761,7 @@ class AutoRewarderAPI:
         if not self._stop_event.is_set() and pc_left <= 0 and mobile_left <= 0:
             self.log("Advanced schedule completed!")
 
-    def main(self, pc_count, mobile_count=0, daily_only=False):
+    def main(self, pc_count, mobile_count=0, daily_only=False, run_context="manual"):
         """
         Run the bot against the currently-selected account.
 
@@ -3581,7 +3779,13 @@ class AutoRewarderAPI:
             pc_count (int): how many searches to do in the PC phase (ignored if daily_only)
             mobile_count (int): how many searches to do in the Mobile phase (ignored if daily_only)
             daily_only (bool): whether to skip searches and just run the Daily Set
+            run_context (str): The context in which the bot is running ("manual" or "scheduled")
         """
+        if run_context not in ("manual", "scheduled"):
+            self.log(
+                f"[WARNING] Unknown run context '{run_context}'. Using scheduled mode."
+            )
+            run_context = "scheduled"
         if self.account_manager.current_id() is None:
             self.log("[ERROR] No account selected. Add one via the dropdown.")
             if self._webview_window:
@@ -3618,6 +3822,11 @@ class AutoRewarderAPI:
             and schedule_enabled
             and bool(schedule.get("advancedScheduling"))
         )
+
+        if run_context == "manual" and not use_advanced:
+            search_delay_range = self.global_settings.get_manual_search_delay()
+        else:
+            search_delay_range = DEFAULT_SEARCH_DELAY
 
         if (
             not daily_only
@@ -3698,16 +3907,28 @@ class AutoRewarderAPI:
                     duration = schedule.get("runDuration", 3)
                     qph = schedule.get("queriesPerHour", 10)
                     self.log("Advanced scheduling enabled. Using scheduled pacing.")
-                    self._run_advanced_schedule(pc_count, mobile_count, duration, qph)
+                    self._run_advanced_schedule(
+                        pc_count,
+                        mobile_count,
+                        duration,
+                        qph,
+                        search_delay_range=search_delay_range,
+                    )
                 else:
                     if pc_count > 0 and not self._stop_event.is_set():
                         self._run_phase(
-                            mobile=False, count=pc_count, do_daily_set=False
+                            mobile=False,
+                            count=pc_count,
+                            do_daily_set=False,
+                            search_delay_range=search_delay_range,
                         )
 
                     if mobile_count > 0 and not self._stop_event.is_set():
                         self._run_phase(
-                            mobile=True, count=mobile_count, do_daily_set=False
+                            mobile=True,
+                            count=mobile_count,
+                            do_daily_set=False,
+                            search_delay_range=search_delay_range,
                         )
 
                     # Always verify dashboard items after searches. Each function
@@ -3723,6 +3944,14 @@ class AutoRewarderAPI:
                 self.log("Stopped.")
             else:
                 self.log("Done!")
+                try:
+                    self.global_settings.register_successful_run()
+                    if self._webview_window:
+                        self._webview_window.evaluate_js(
+                            "typeof check_star_prompt === 'function' && check_star_prompt()"
+                        )
+                except Exception:
+                    pass
 
                 if self.account_meta is not None:
                     try:
@@ -4374,20 +4603,25 @@ class AutoRewarderAPI:
         queries = []
         cfg = self.global_settings.get_llm_config()
         if cfg["use_llm_queries"]:
-            if cfg["llm_api_key"]:
+            provider = cfg.get("llm_provider", "openai")
+            base_url = cfg.get("llm_base_url", "")
+            has_creds = bool(cfg.get("llm_api_key")) or (
+                provider == "openai-compatible" and bool(base_url)
+            )
+            if has_creds:
                 locale = resolve_search_locale(
                     self.global_settings.get_settings(), self.log
                 )
                 self.log(
-                    f"Generating {count} queries via LLM "
-                    f"({cfg['llm_provider']}, {locale})…"
+                    f"Generating {count} queries via LLM " f"({provider}, {locale})…"
                 )
                 queries = llm.generate_queries(
                     count,
                     locale,
-                    provider=cfg["llm_provider"],
+                    provider=provider,
                     model=cfg["llm_model"],
                     api_key=cfg["llm_api_key"],
+                    base_url=base_url,
                     logger=self.log,
                 )
                 if not queries:
@@ -4397,7 +4631,7 @@ class AutoRewarderAPI:
                     )
             else:
                 self.log(
-                    "[WARNING] LLM enabled but no API key set — "
+                    "[WARNING] LLM enabled but no API key/base URL set — "
                     "using static queries."
                 )
 
@@ -4507,6 +4741,23 @@ class AutoRewarderAPI:
             # leave today unmarked so the next run tries again.
             credited = self._check_visual_search_credited()
             if credited is False:
+                other = self.search_engine.other_surface_url()
+                if other and not self._stop_event.is_set():
+                    self.log(
+                        f"Rewards did not count the visual search; "
+                        f"trying {other} instead."
+                    )
+                    retry_ok = self.search_engine.perform_visual_search(
+                        self._driver,
+                        image_path,
+                        stop_event=self._stop_event,
+                        entry_url=getattr(self.daily_set, "visual_search_url", None),
+                        search_url=other,
+                    )
+                    if retry_ok:
+                        credited = self._check_visual_search_credited()
+
+            if credited is False:
                 self.log(
                     "[WARNING] Rewards did not count the visual search. "
                     "Not marked as done for today."
@@ -4559,7 +4810,9 @@ class AutoRewarderAPI:
 
         return done > 0
 
-    def _run_phase(self, mobile, count, do_daily_set):
+    def _run_phase(
+        self, mobile, count, do_daily_set, search_delay_range=DEFAULT_SEARCH_DELAY
+    ):
         """
         Open a driver for a single phase (PC or Mobile), do `count` searches,
         optionally run the Daily Set, then quit.
@@ -4568,6 +4821,7 @@ class AutoRewarderAPI:
             mobile (bool): whether this is the Mobile phase (True) or PC phase (False)
             count (int): how many searches to perform in this phase
             do_daily_set (bool): whether to run the Daily Set after searches (PC phase only)
+            search_delay_range (tuple): min/max delay range in seconds for each search
         """
         label = "Mobile" if mobile else "PC"
         if mobile:
@@ -4615,6 +4869,7 @@ class AutoRewarderAPI:
                 mobile=mobile,
                 stop_event=self._stop_event,
                 on_success=_on_search,
+                search_delay_range=search_delay_range,
             )
             self._report(
                 f"Search: {'Mobile' if mobile else 'PC'}",

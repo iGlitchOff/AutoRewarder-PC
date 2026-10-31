@@ -10,11 +10,11 @@ import os
 import platform
 import sys
 
-# Compared to GitHub release tags. This local build includes the compatible 4.3
+# Compared to GitHub release tags. This local build includes the compatible 4.4
 # updates while retaining the custom mobile and desktop features.
-GITHUB_VERSION = "4.3"
-# This build is the first custom patch release on top of GitHub 4.3.
-CURRENT_VERSION = "4.3.68"
+GITHUB_VERSION = "4.4"
+# This build is based on GitHub 4.4.
+CURRENT_VERSION = "4.4.0"
 REPO = "iGlitchOn/AutoRewarder-PC"
 
 PLATFORM_NAME = platform.system()

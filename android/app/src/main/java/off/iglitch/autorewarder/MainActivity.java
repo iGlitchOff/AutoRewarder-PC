@@ -5,11 +5,13 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.View;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -43,7 +45,13 @@ public class MainActivity extends Activity {
         bingWrap = findViewById(R.id.bing_wrap);
         bingStatus = findViewById(R.id.bing_status);
         Button close = findViewById(R.id.bing_close);
-        close.setOnClickListener(v -> hideBing(false, "Cerrado"));
+        close.setOnClickListener(v -> closeBing());
+
+        ui.setBackgroundColor(Color.parseColor("#101827"));
+        ui.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        ui.setVerticalScrollBarEnabled(false);
+        ui.setHorizontalScrollBarEnabled(false);
+        bing.setBackgroundColor(Color.parseColor("#101827"));
 
         @SuppressLint("SetJavaScriptEnabled")
         WebSettings settings = ui.getSettings();
@@ -53,6 +61,10 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccessFromFileURLs(true);
         settings.setAllowUniversalAccessFromFileURLs(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        settings.setSupportZoom(false);
+        settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
+        settings.setTextZoom(100);
 
         js = new AndroidJs(this, ui);
         ui.addJavascriptInterface(js, "Android");
@@ -61,6 +73,16 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 view.evaluateJavascript("window.onNativeReady && onNativeReady()", null);
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                try {
+                    view.loadUrl("file:///android_asset/www/phone.html");
+                } catch (Exception e) {
+                    view.reload();
+                }
+                return true;
             }
         });
         ui.loadUrl("file:///android_asset/www/phone.html");
@@ -126,6 +148,50 @@ public class MainActivity extends Activity {
         });
     }
 
+    void openRewardsLogin() {
+        runOnUiThread(() -> {
+            if (tasks == null) return;
+            bingWrap.setVisibility(View.VISIBLE);
+            setBingStatus("Inicia sesión con la cuenta Microsoft.");
+            tasks.openLogin();
+        });
+    }
+
+    void probeBingSession() {
+        runOnUiThread(() -> {
+            if (tasks == null) {
+                deliverSession(false);
+                return;
+            }
+            tasks.probeForUi();
+        });
+    }
+
+    void deliverSession(boolean loggedIn) {
+        runOnUiThread(() -> {
+            if (ui == null) return;
+            ui.evaluateJavascript(
+                    "window.onBingSession && onBingSession(" + loggedIn + ")",
+                    null);
+        });
+    }
+
+    void hideBingPanel() {
+        runOnUiThread(() -> {
+            if (bingWrap != null) bingWrap.setVisibility(View.GONE);
+        });
+    }
+
+    void closeBing() {
+        runOnUiThread(() -> {
+            if (tasks != null && tasks.isLoginMode()) {
+                tasks.finishLogin();
+                return;
+            }
+            hideBing(false, "Cerrado");
+        });
+    }
+
     void setBingStatus(String text) {
         runOnUiThread(() -> bingStatus.setText(text));
     }
@@ -168,7 +234,7 @@ public class MainActivity extends Activity {
 
     void installApk(File apk) {
         runOnUiThread(() -> {
-            if (apk == null || !apk.isFile()) {
+            if (apk == null || !apk.isFile() || apk.length() < 100) {
                 onUpdateFailed("APK no descargado.");
                 return;
             }
@@ -203,7 +269,7 @@ public class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (bingWrap.getVisibility() == View.VISIBLE) {
-            hideBing(false, "Cancelado");
+            closeBing();
             return;
         }
         super.onBackPressed();

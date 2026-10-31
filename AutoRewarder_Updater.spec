@@ -6,7 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('gui', 'gui'), ('assets', 'assets')],
-    hiddenimports=['src.utils', 'requests', 'PIL', 'PIL.Image'],
+    hiddenimports=['src.utils', 'requests', 'PIL', 'PIL.Image', 'pystray', 'pystray._win32'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -14,6 +14,9 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
+a.datas = [x for x in a.datas if not (x[0].startswith('assets/screenshots') or x[0].startswith('assets\\screenshots'))]
+
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,

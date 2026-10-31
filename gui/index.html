@@ -19,7 +19,7 @@
         </div>
         <div class="brand-text">
           <h1>Rewards Control</h1>
-<span class="brand-sub" id="app_version">Microsoft Rewards · PC control · 4.3.68</span>
+          <span class="brand-sub" id="app_version">Microsoft Rewards · PC control · 4.4.0</span>
         </div>
       </div>
 
@@ -184,13 +184,22 @@
     <section class="card activity-card">
       <div class="card-header">
          <div class="card-label" data-i18n="activity">Activity</div>
-        <button id="history_btn" class="ghost-link" type="button" onclick="show_history()">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="12 6 12 12 16 14"></polyline>
-          </svg>
-           <span data-i18n="history">View history</span>
-        </button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="history_btn" class="ghost-link" type="button" onclick="show_history()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span data-i18n="history">View history</span>
+          </button>
+          <button id="logs_btn" class="ghost-link" type="button" onclick="show_background_logs()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 17l6-6-6-6"></path>
+              <path d="M12 19h8"></path>
+            </svg>
+            <span data-i18n="background_logs">Background logs</span>
+          </button>
+        </div>
       </div>
       <div id="log_area" class="activity-feed"></div>
     </section>
@@ -304,6 +313,22 @@
               <span class="toggle-pill"></span>
             </span>
           </label>
+          <div class="settings-row" style="flex-direction: column; align-items: stretch; gap: 10px;">
+            <div class="settings-row-text">
+              <div class="settings-row-label" data-i18n="settings.manual_delay_title">Pause between manual searches</div>
+              <div class="settings-row-hint" data-i18n="settings.manual_delay_hint">Sets a random pause between search queries during a normal manual run. Does not apply to scheduled runs or Advanced scheduling.</div>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-field">
+                <label for="manualSearchDelayMin" data-i18n="settings.manual_delay_min">MINIMUM, SECONDS</label>
+                <input type="number" id="manualSearchDelayMin" min="0" max="1800" step="0.1" value="4">
+              </div>
+              <div class="form-field">
+                <label for="manualSearchDelayMax" data-i18n="settings.manual_delay_max">MAXIMUM, SECONDS</label>
+                <input type="number" id="manualSearchDelayMax" min="0" max="1800" step="0.1" value="10">
+              </div>
+            </div>
+          </div>
         </section>
 
         <section class="settings-group">
@@ -352,6 +377,7 @@
                 <label for="llmProvider">Provider</label>
                 <select id="llmProvider">
                   <option value="openai">OpenAI</option>
+                  <option value="openai-compatible">OpenAI-compatible</option>
                   <option value="anthropic">Anthropic</option>
                   <option value="gemini">Google Gemini</option>
                 </select>
@@ -360,6 +386,10 @@
                 <label for="llmModel">Model</label>
                 <input type="text" id="llmModel" placeholder="Default for provider" autocomplete="off" spellcheck="false">
               </div>
+            </div>
+            <div class="form-field" id="llm_base_url_field" hidden style="margin-bottom: 10px;">
+              <label for="llmBaseUrl">Base URL</label>
+              <input type="url" id="llmBaseUrl" placeholder="https://api.example.com/v1 or http://localhost:11434/v1" autocomplete="off" spellcheck="false">
             </div>
             <div class="form-grid-2">
               <div class="form-field">

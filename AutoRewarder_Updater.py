@@ -37,7 +37,9 @@ def _process_is_running(pid):
         return False
     try:
         exit_code = ctypes.c_ulong()
-        if not ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+        if not ctypes.windll.kernel32.GetExitCodeProcess(
+            handle, ctypes.byref(exit_code)
+        ):
             return False
         return exit_code.value == 259  # STILL_ACTIVE
     finally:
@@ -95,8 +97,7 @@ class UpdaterAPI:
             return
         try:
             self.window.evaluate_js(
-                "update_progress(%r, %r, %r)"
-                % (stage, value, detail)
+                "update_progress(%r, %r, %r)" % (stage, value, detail)
             )
         except Exception:
             pass
@@ -132,11 +133,15 @@ class UpdaterAPI:
                     if not source:
                         source = find_release_file(root, "AutoRewarder_v*Portable.exe")
                     if not source:
-                        raise ValueError("The portable package does not contain AutoRewarder-Portable.exe.")
+                        raise ValueError(
+                            "The portable package does not contain AutoRewarder-Portable.exe."
+                        )
                 else:
                     source = find_release_file(root, "AutoRewarder.exe")
                     if not source:
-                        raise ValueError("The package does not contain AutoRewarder.exe.")
+                        raise ValueError(
+                            "The package does not contain AutoRewarder.exe."
+                        )
 
             self._progress("replacing", 0.55)
             source_base = os.path.basename(source).lower()
@@ -167,9 +172,12 @@ class UpdaterAPI:
                             source_dir,
                             target_dir,
                             dirs_exist_ok=True,
-                            ignore=lambda current, names: {
-                                "AutoRewarder-Updater.exe"
-                            } if os.path.abspath(current) == os.path.abspath(source_dir) else set(),
+                            ignore=lambda current, names: (
+                                {"AutoRewarder-Updater.exe"}
+                                if os.path.abspath(current)
+                                == os.path.abspath(source_dir)
+                                else set()
+                            ),
                         )
                     break
                 except (PermissionError, OSError):
@@ -214,7 +222,7 @@ class UpdaterAPI:
 
 def _install_updater_tray(api):
     try:
-        import pystray
+        import pystray  # type: ignore[import-untyped]
         from PIL import Image
 
         def on_exit(icon, item):
@@ -226,9 +234,7 @@ def _install_updater_tray(api):
         except Exception:
             image = Image.new("RGB", (64, 64), (0, 0, 0))
 
-        menu = pystray.Menu(
-            pystray.MenuItem("Exit Updater", on_exit)
-        )
+        menu = pystray.Menu(pystray.MenuItem("Exit Updater", on_exit))
         icon = pystray.Icon("AutoRewarderUpdater", image, "AutoRewarder Updater", menu)
         api.icon = icon
         icon.run_detached()

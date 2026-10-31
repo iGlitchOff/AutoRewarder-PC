@@ -2,21 +2,38 @@ package off.iglitch.autorewarder;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 
 public final class BingLauncher {
     public static final String BING = "com.microsoft.bing";
+    public static final int MISSING = 0;
+    public static final int DISABLED = 1;
+    public static final int INSTALLED = 2;
 
     private BingLauncher() {}
 
-    public static boolean isInstalled(Context context) {
+    /** missing when getPackageInfo throws or there is no launch intent. */
+    public static int packageState(Context context) {
+        if (context == null) return MISSING;
+        PackageManager pm = context.getPackageManager();
+        PackageInfo info;
         try {
-            context.getPackageManager().getPackageInfo(BING, 0);
-            return true;
+            info = pm.getPackageInfo(BING, PackageManager.MATCH_DISABLED_COMPONENTS);
         } catch (Exception e) {
-            return false;
+            return MISSING;
         }
+        ApplicationInfo app = info.applicationInfo;
+        if (app == null) return MISSING;
+        if (!app.enabled) return DISABLED;
+        if (pm.getLaunchIntentForPackage(BING) == null) return MISSING;
+        return INSTALLED;
+    }
+
+    public static boolean isInstalled(Context context) {
+        return packageState(context) == INSTALLED;
     }
 
     public static boolean install(Context context) {
@@ -41,11 +58,12 @@ public final class BingLauncher {
     }
 
     public static boolean open(Context context, String kind) {
-        String url = "https://www.bing.com/?form=APMCS1&setmkt=es-CO";
+        String mkt = BingMarket.get();
+        String url = "https://www.bing.com/?form=APMCS1&setmkt=" + mkt;
         if ("news".equals(kind)) {
-            url = "https://www.bing.com/news?form=APMCS1&setmkt=es-CO";
+            url = "https://www.bing.com/news?form=APMCS1&setmkt=" + mkt;
         } else if ("rewards".equals(kind) || "login".equals(kind)) {
-            url = "https://rewards.bing.com/?form=APMCS1&setmkt=es-CO";
+            url = "https://rewards.bing.com/?form=APMCS1&setmkt=" + mkt;
         }
         Intent view = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

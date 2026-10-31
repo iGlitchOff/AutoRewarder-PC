@@ -386,7 +386,9 @@ class StatsManager:
         if new_balance == 0 and isinstance(prior, int) and prior > 50:
             return
         start_bal = bucket.get("start_balance")
-        if start_bal is None or (start_bal == 0 and new_balance > 50 and int(bucket.get("runs") or 0) <= 1):
+        if start_bal is None or (
+            start_bal == 0 and new_balance > 50 and int(bucket.get("runs") or 0) <= 1
+        ):
             if isinstance(prior, int) and prior > 0:
                 bucket["start_balance"] = int(prior)
             else:

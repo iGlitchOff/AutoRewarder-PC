@@ -2,43 +2,63 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0B0D12">
+    android:background="#101827">
 
     <WebView
         android:id="@+id/ui"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:overScrollMode="never" />
 
     <LinearLayout
         android:id="@+id/bing_wrap"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#0B0D12"
+        android:background="#101827"
         android:orientation="vertical"
         android:visibility="gone">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:background="#172033"
             android:gravity="center_vertical"
-            android:padding="10dp">
+            android:paddingStart="16dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="10dp">
 
             <TextView
                 android:id="@+id/bing_status"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Bing"
-                android:textColor="#E8EBF0"
-                android:textSize="13sp" />
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:text="Microsoft Rewards"
+                android:textColor="#F1F5F9"
+                android:textSize="13sp"
+                android:textStyle="bold" />
 
             <Button
                 android:id="@+id/bing_close"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_height="38dp"
+                android:layout_marginStart="10dp"
+                android:backgroundTint="#24324B"
+                android:minHeight="38dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:text="Cerrar"
-                android:textAllCaps="false" />
+                android:textAllCaps="false"
+                android:textColor="#F1F5F9"
+                android:textSize="13sp" />
         </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#28354E" />
 
         <WebView
             android:id="@+id/bing"

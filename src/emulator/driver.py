@@ -12,7 +12,6 @@ from selenium.webdriver.edge.service import Service
 
 from ..config import APP_DIR
 
-
 _CLOSED_BROWSER_NEEDLES = (
     "no such window",
     "target frame detached",

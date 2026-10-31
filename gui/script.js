@@ -564,6 +564,12 @@ function show_history() {
   pywebview.api.open_history_window();
 }
 
+function show_background_logs() {
+  if (window.pywebview && pywebview.api && pywebview.api.open_background_logs_window) {
+    pywebview.api.open_background_logs_window();
+  }
+}
+
 function show_stats() {
   if (!window.pywebview || !pywebview.api || !pywebview.api.open_stats_window) return;
   pywebview.api.open_stats_window();
@@ -924,9 +930,15 @@ function close_accounts_modal() {
 // Settings modal (general + scheduled run)
 // =========================================================================
 
+let settingsLoaded = false;
+
 function open_settings_modal() {
   const backdrop = document.getElementById('settings_modal');
   if (!backdrop) return;
+
+  settingsLoaded = false;
+  const saveBtn = document.getElementById('settingsSave');
+  if (saveBtn) saveBtn.disabled = true;
 
   Promise.all([
     pywebview.api.get_all_schedules(),
@@ -936,8 +948,16 @@ function open_settings_modal() {
     pywebview.api.get_llm_config(),
     pywebview.api.get_force_tasks(),
     pywebview.api.get_settings(),
-  ]).then(([schedules, startup, openOnLogin, closeToTray, llmConfig, forceTasks, settings]) => {
+    pywebview.api.get_manual_search_delay ? pywebview.api.get_manual_search_delay() : Promise.resolve({ minimum: 4, maximum: 10 }),
+  ]).then(([schedules, startup, openOnLogin, closeToTray, llmConfig, forceTasks, settings, manualSearchDelay]) => {
     render_schedule_cards(schedules || []);
+
+    // Manual search delay fields.
+    const delay = manualSearchDelay || {};
+    const minInput = document.getElementById('manualSearchDelayMin');
+    const maxInput = document.getElementById('manualSearchDelayMax');
+    if (minInput) minInput.value = delay.minimum ?? 4;
+    if (maxInput) maxInput.value = delay.maximum ?? 10;
 
     // Start-with-Windows toggle — disable row on unsupported OS.
     const startupToggle = document.getElementById('startupToggle');
@@ -992,12 +1012,14 @@ function open_settings_modal() {
     const providerSel = document.getElementById('llmProvider');
     const modelInput = document.getElementById('llmModel');
     const keyInput = document.getElementById('llmApiKey');
+    const baseUrlInput = document.getElementById('llmBaseUrl');
     const localeInput = document.getElementById('llmLocale');
     const localeHint = document.getElementById('llm_locale_hint');
     if (llmToggle) llmToggle.checked = Boolean(cfg.use_llm_queries);
     if (providerSel && cfg.llm_provider) providerSel.value = cfg.llm_provider;
     if (modelInput) modelInput.value = cfg.llm_model || '';
     if (keyInput) keyInput.value = cfg.llm_api_key || '';
+    if (baseUrlInput) baseUrlInput.value = cfg.llm_base_url || '';
     if (localeInput) localeInput.value = cfg.search_locale || 'auto';
     if (localeHint) {
       const eff = cfg.effective_locale || 'en-US';
@@ -1005,9 +1027,12 @@ function open_settings_modal() {
         tf('settings.detected_language', { locale: eff });
     }
     apply_llm_field_state();
+    settingsLoaded = true;
+    if (saveBtn) saveBtn.disabled = false;
   }).catch(err => {
     console.error('Failed to load settings:', err);
-  show_toast(t('settings_load_error'), 'error');
+    show_toast(t('settings_load_error'), 'error');
+    close_settings_modal();
   });
 
   backdrop.hidden = false;
@@ -1022,6 +1047,11 @@ function close_settings_modal() {
 function apply_llm_field_state() {
   const toggle = document.getElementById('llmToggle');
   const fields = document.getElementById('llm_fields');
+  const providerSel = document.getElementById('llmProvider');
+  const baseUrlField = document.getElementById('llm_base_url_field');
+  if (baseUrlField && providerSel) {
+    baseUrlField.hidden = providerSel.value !== 'openai-compatible';
+  }
   if (!fields) return;
   fields.classList.toggle('dim', !(toggle && toggle.checked));
 }
@@ -1283,10 +1313,27 @@ function make_form_field(labelText, inputType, className, value, opts) {
 }
 
 async function save_settings() {
+  if (!settingsLoaded) return;
   const cards = Array.from(document.querySelectorAll('#schedule_accounts_list .schedule-card'));
   const closeToTrayWanted = document.getElementById('closeToTrayToggle').checked;
   const startupWanted = document.getElementById('startupToggle').checked;
   const openOnLoginWanted = document.getElementById('openOnLoginToggle').checked;
+
+  const minDelayEl = document.getElementById('manualSearchDelayMin');
+  const maxDelayEl = document.getElementById('manualSearchDelayMax');
+  const minDelay = minDelayEl ? parseFloat(minDelayEl.value) : 4.0;
+  const maxDelay = maxDelayEl ? parseFloat(maxDelayEl.value) : 10.0;
+  if (
+    !Number.isFinite(minDelay) ||
+    !Number.isFinite(maxDelay) ||
+    minDelay < 0 ||
+    maxDelay < 0 ||
+    minDelay > maxDelay ||
+    maxDelay > 1800
+  ) {
+    show_toast('Pause between manual searches must be between 0 and 1800s (min ≤ max).', 'warning');
+    return;
+  }
 
   // Validate + collect payloads per account.
   const payloads = [];
@@ -1374,13 +1421,19 @@ async function save_settings() {
 
     // Persist LLM search-term config (independent of the schedule slicing).
     const llmToggleEl = document.getElementById('llmToggle');
+    const llmBaseUrlEl = document.getElementById('llmBaseUrl');
     await pywebview.api.set_llm_config(
       Boolean(llmToggleEl && llmToggleEl.checked),
       document.getElementById('llmProvider').value,
       document.getElementById('llmModel').value,
       document.getElementById('llmApiKey').value,
-      document.getElementById('llmLocale').value
+      document.getElementById('llmLocale').value,
+      llmBaseUrlEl ? llmBaseUrlEl.value : ''
     );
+
+    if (pywebview.api.set_manual_search_delay) {
+      await pywebview.api.set_manual_search_delay(minDelay, maxDelay);
+    }
 
     const scheduleCalls = payloads.map(p =>
       pywebview.api.set_schedule(p.id, p.payload)
@@ -1577,6 +1630,8 @@ document.addEventListener('DOMContentLoaded', function() {
   // LLM feature toggle dims/undims its config fields live.
   const llmToggle = document.getElementById('llmToggle');
   if (llmToggle) llmToggle.addEventListener('change', apply_llm_field_state);
+  const llmProvider = document.getElementById('llmProvider');
+  if (llmProvider) llmProvider.addEventListener('change', apply_llm_field_state);
   const settingsModal = document.getElementById('settings_modal');
   if (settingsModal) {
     settingsModal.addEventListener('click', (e) => {

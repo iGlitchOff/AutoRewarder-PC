@@ -6,15 +6,29 @@ import os
 from ..config import APP_DIR, GLOBAL_SETTINGS_PATH
 
 SCHEMA_VERSION = 3
+
+MAX_MANUAL_SEARCH_DELAY = 1800.0  # 30 min
+
+# Returned by _read_json when the file is there but couldn't be read. Distinct
+# from `default`, which means "there is nothing to read": a file we failed to
+# read still holds the user's settings, and must never be written over.
 UNREADABLE = object()
 
 
 def _read_json(path, default):
-    """Read JSON without replacing a file that is only temporarily locked."""
+    """
+    Read a JSON file.
+
+    A file whose content is malformed is moved aside as .backup and `default` is
+    returned — the file is beyond saving. A file that merely can't be opened
+    right now (a Windows lock from Defender, the indexer, or a second instance
+    mid-write) is retried and then reported as UNREADABLE, and left untouched:
+    quarantining it there used to cost the user every setting they had.
+    """
+    import time as _time
+
     if not os.path.exists(path):
         return default
-
-    import time as _time
 
     for attempt in range(4):
         try:
@@ -118,23 +132,34 @@ class GlobalSettingsManager:
             "force_daily_tasks": False,
             "force_visual_search": False,
             # Default query counts.
-            "queries_pc": 15,
-            "queries_mobile": 15,
+            "queries_pc": 30,
+            "queries_mobile": 20,
             # LLM-generated search terms (bring-your-own-key). When enabled and
             # a key is present, each phase asks the chosen provider for fresh
             # queries in the user's language; any failure falls back to the
             # static assets/queries.json. The key is stored in plain text here,
             # consistent with the rest of settings.json.
             "use_llm_queries": False,
-            "llm_provider": "openai",  # openai | anthropic | gemini
+            "llm_provider": "openai",  # openai | openai-compatible | anthropic | gemini
             "llm_model": "",  # blank = provider default
             "llm_api_key": "",
+            "llm_base_url": "",
             # Language of generated queries. "auto" resolves from
             # detected_locale (navigator.language) or OS detection.
             "search_locale": "auto",
             "detected_locale": "",  # filled by the GUI from navigator.language
-            # UI language: "auto" follows Windows / region, else "en" or "es".
+            # UI language: "auto" follows Windows / region, else "en", "es", "pt", "zh".
             "ui_language": "auto",
+            # Delay range for normal manual searches
+            "manual_search_delay_min": 4.0,
+            "manual_search_delay_max": 10.0,
+            # For github star toast
+            # Prompt after 2 successful runs, and only once.
+            "successful_runs": 0,
+            # None -> not yet prompted,
+            # "pending" -> prompt now,
+            # "disabled" -> don't prompt
+            "star_prompt_status": None,
         }
 
         if APP_DIR and not os.path.exists(APP_DIR):
@@ -243,7 +268,7 @@ class GlobalSettingsManager:
 
     def get_queries_pc(self):
         """Return the saved PC queries count from settings."""
-        return self.get_settings().get("queries_pc", 15)
+        return self.get_settings().get("queries_pc", 30)
 
     def set_queries_pc(self, count):
         """Persist the PC queries count in settings."""
@@ -253,13 +278,151 @@ class GlobalSettingsManager:
 
     def get_queries_mobile(self):
         """Return the saved mobile queries count from settings."""
-        return self.get_settings().get("queries_mobile", 15)
+        return self.get_settings().get("queries_mobile", 20)
 
     def set_queries_mobile(self, count):
         """Persist the mobile queries count in settings."""
         settings = self.settings_for_update()
         settings["queries_mobile"] = max(0, min(99, int(count)))
         self.save_settings(settings)
+
+    def get_manual_search_delay(self):
+        """
+        Return the saved delay range for normal manual searches.
+
+        Returns:
+            tuple[float, float]: minimum and maximum delay in seconds.
+        """
+        import math
+
+        settings = self.get_settings()
+
+        try:
+            minimum = float(settings.get("manual_search_delay_min", 4.0))
+            maximum = float(settings.get("manual_search_delay_max", 10.0))
+        except (TypeError, ValueError):
+            return 4.0, 10.0
+
+        if (
+            not math.isfinite(minimum)
+            or not math.isfinite(maximum)
+            or minimum < 0
+            or maximum < 0
+            or minimum > maximum
+            or maximum > MAX_MANUAL_SEARCH_DELAY
+        ):
+            return 4.0, 10.0
+
+        return minimum, maximum
+
+    def set_manual_search_delay(self, minimum, maximum):
+        """
+        Persist the delay range for normal manual searches.
+
+        Returns:
+            bool: True when the values were accepted and saved.
+        """
+        import math
+
+        try:
+            minimum = float(minimum)
+            maximum = float(maximum)
+        except (TypeError, ValueError):
+            return False
+
+        if (
+            not math.isfinite(minimum)
+            or not math.isfinite(maximum)
+            or minimum < 0
+            or maximum < 0
+            or minimum > maximum
+            or maximum > MAX_MANUAL_SEARCH_DELAY
+        ):
+            return False
+
+        settings = self.settings_for_update()
+        settings["manual_search_delay_min"] = minimum
+        settings["manual_search_delay_max"] = maximum
+        self.save_settings(settings)
+
+        return True
+
+    def get_star_prompt_state(self):
+        """
+        Return the state of the GitHub star prompt.
+
+        Returns:
+            dict: { "successful_runs": int, "star_prompt_status": str or None }
+        """
+        settings = self.get_settings()
+        return self._star_prompt_state_for_settings(settings)
+
+    def _star_prompt_state_for_settings(self, settings):
+        """Normalize the star prompt state from settings."""
+        try:
+            successful_runs = int(settings.get("successful_runs", 0))
+        except (TypeError, ValueError):
+            successful_runs = 0
+
+        status = settings.get("star_prompt_status")
+
+        if status not in (None, "pending", "disabled"):
+            status = None
+
+        return {
+            "successful_runs": successful_runs,
+            "star_prompt_status": status,
+        }
+
+    def register_successful_run(self):
+        """
+        Register a successful AutoRewarder run for the GitHub star prompt.
+
+        Returns:
+            dict: { "successful_runs": int, "star_prompt_status": str or None }
+        """
+        settings = self.settings_for_update()
+        state = self._star_prompt_state_for_settings(settings)
+
+        if state["star_prompt_status"] == "disabled":
+            return state
+
+        successful_runs = state["successful_runs"] + 1
+
+        if successful_runs >= 2:
+            successful_runs = 2
+            status = "pending"
+        else:
+            status = state["star_prompt_status"]
+
+        settings["successful_runs"] = successful_runs
+        settings["star_prompt_status"] = status
+        self.save_settings(settings)
+
+        return {
+            "successful_runs": successful_runs,
+            "star_prompt_status": status,
+        }
+
+    def postpone_star_prompt(self):
+        """
+        Postpone the GitHub star prompt by resetting the successful runs count
+        and clearing the prompt status.
+        """
+        settings = self.settings_for_update()
+        settings["successful_runs"] = 0
+        settings["star_prompt_status"] = None
+        self.save_settings(settings)
+        return True
+
+    def disable_star_prompt(self):
+        """
+        Disable the GitHub star prompt.
+        """
+        settings = self.settings_for_update()
+        settings["star_prompt_status"] = "disabled"
+        self.save_settings(settings)
+        return True
 
     # ------------------------------------------------------------------
     # LLM-generated search terms + locale
@@ -273,14 +436,22 @@ class GlobalSettingsManager:
             "llm_provider": s.get("llm_provider", "openai"),
             "llm_model": s.get("llm_model", ""),
             "llm_api_key": s.get("llm_api_key", ""),
+            "llm_base_url": s.get("llm_base_url", ""),
             "search_locale": s.get("search_locale", "auto"),
             "detected_locale": s.get("detected_locale", ""),
         }
 
     def set_llm_config(
-        self, use_llm_queries, provider, model, api_key, search_locale="auto"
+        self,
+        use_llm_queries,
+        provider,
+        model,
+        api_key,
+        search_locale="auto",
+        base_url="",
     ):
-        """Persist the LLM query-generation config.
+        """
+        Persist the LLM query-generation config.
 
         Unknown providers fall back to "openai"; an empty locale becomes
         "auto". The API key is stored as-is (plain text) alongside the other
@@ -299,6 +470,7 @@ class GlobalSettingsManager:
         settings["llm_provider"] = provider
         settings["llm_model"] = str(model or "").strip()
         settings["llm_api_key"] = str(api_key or "").strip()
+        settings["llm_base_url"] = str(base_url or "").strip()
         settings["search_locale"] = locale
         self.save_settings(settings)
 

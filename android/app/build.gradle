@@ -16,8 +16,8 @@ android {
         applicationId "off.iglitch.autorewarder"
         minSdk 26
         targetSdk 34
-    versionCode 20
-    versionName "4.3.46"
+        versionCode 53
+        versionName "4.4.0"
     }
 
     signingConfigs {
@@ -55,6 +55,9 @@ tasks.register('syncWebAssets', Copy) {
         include 'i18n.js'
         include 'styles.css'
         include 'normalize.css'
+        include 'icon.png'
+        include 'icon.ico'
+        include 'iglitchoff.png'
     }
     into "${projectDir}/src/main/assets/www"
 }
@@ -63,5 +66,6 @@ preBuild.dependsOn syncWebAssets
 
 dependencies {
     implementation 'com.google.zxing:core:3.5.3'
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
     implementation 'androidx.core:core:1.13.1'
 }

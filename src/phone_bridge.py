@@ -730,7 +730,9 @@ class PhoneBridge:
                         if ok and getattr(bridge.api, "daily_set", None) is not None:
                             if kind in ("checkin", "all"):
                                 bridge.api.daily_set.mark_checkin_as_completed()
-                                bridge.api.daily_set.save_live_snapshot({"checkin": [1, 1]})
+                                bridge.api.daily_set.save_live_snapshot(
+                                    {"checkin": [1, 1]}
+                                )
                             if kind in ("news", "all"):
                                 bridge.api.daily_set.mark_news_as_completed()
                     except Exception:
@@ -834,7 +836,14 @@ class PhoneBridge:
         except Exception:
             pass
         try:
-            if kind in ("checkin", "claim", "news", "all", "returned from bing", "paired"):
+            if kind in (
+                "checkin",
+                "claim",
+                "news",
+                "all",
+                "returned from bing",
+                "paired",
+            ):
                 self.api._notify_progress()
         except Exception:
             pass
