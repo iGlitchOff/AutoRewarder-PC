@@ -18,7 +18,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Check-in / news and Microsoft Rewards session manager in WebView. */
+/**
+ * Background Check-in / Read-to-Earn News runner and Microsoft Rewards session verifier.
+ * Runs silently behind the main UI unless interactive login is required, scrolls each
+ * news article for ~3.8s so Bing credits the +3 points, and strictly verifies the real
+ * counter on rewards.bing.com / www.bing.com before reporting completion.
+ */
 final class BingTasks {
     static final String UA =
             "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 "
@@ -29,6 +34,7 @@ final class BingTasks {
     private static final String BING_SSO_URL =
             "https://www.bing.com/fd/auth/signin?action=interactive&provider=windows_live_id&return_url="
                     + Uri.encode(BING_HOME);
+    private static final String REWARDS_FLYOUT_BASE = "https://www.bing.com/rewards/panelflyout?style=chrome";
     private static final String REWARDS_DASHBOARD = "https://rewards.bing.com/dashboard";
 
     private static final String CLICK_JS =
@@ -44,6 +50,14 @@ final class BingTasks {
                     + " }"
                     + "}"
                     + "return false;"
+                    + "})();";
+
+    private static final String SCROLL_ARTICLE_JS =
+            "(function(){"
+                    + "try{"
+                    + " window.scrollBy({top: 260, left: 0, behavior: 'smooth'});"
+                    + " document.dispatchEvent(new Event('scroll'));"
+                    + "}catch(e){window.scrollBy(0, 260);}"
                     + "})();";
 
     private static final String SNAPSHOT_JS =
@@ -85,9 +99,13 @@ final class BingTasks {
                     + " var mCheck=bodyText.match(/(?:Check-in|Check in|Registro)\\s*:?\\s*(\\d+)\\s*\\/\\s*(\\d+)/i);"
                     + " var checkinDom=mCheck?[parseInt(mCheck[1],10),parseInt(mCheck[2],10)]:null;"
                     + " var mNews=bodyText.match(/(?:Read to earn|Leer para ganar|Noticias|News)\\s*:?\\s*(\\d+)\\s*\\/\\s*(\\d+)/i);"
-                    + " var newsDom=mNews?[parseInt(mNews[1],10),parseInt(mNews[2],10)]:[0,30];"
+                    + " var newsDom=mNews?[parseInt(mNews[1],10),parseInt(mNews[2],10)]:null;"
                     + " var nextBlob='';"
                     + " try{if(window.__next_f){var parts=[];for(var k=0;k<window.__next_f.length;k++){var e=window.__next_f[k];if(Array.isArray(e)&&typeof e[1]==='string')parts.push(e[1]);else if(typeof e==='string')parts.push(e);}nextBlob=parts.join('');}}catch(eN){}"
+                    + " if(!newsDom && nextBlob){"
+                    + "  var mNext=nextBlob.match(/\"readArticle\"[^\\}]*\"pointProgress\"\\s*:\\s*(\\d+)[^\\}]*\"pointProgressMax\"\\s*:\\s*(\\d+)/i);"
+                    + "  if(mNext) newsDom=[parseInt(mNext[1],10),parseInt(mNext[2],10)];"
+                    + " }"
                     + " var hasNext=nextBlob.indexOf('availablePoints')>=0||nextBlob.indexOf('dailySetItems')>=0;"
                     + " return JSON.stringify({readable:(hasCookie||hasNext),checkin:checkinDom,news:newsDom});"
                     + "}catch(e){return JSON.stringify({readable:false,error:String(e)});}"
@@ -96,7 +114,7 @@ final class BingTasks {
     private static final String NEWS_HREFS_JS =
             "(function(){"
                     + "var sel=['a.title','a.card-title','.title-container a','a.card-link','.news-card a',"
-                    + "'a[href*=\"msn.com/\"]','a[href*=\"microsoftnews\"]','[class*=\"news\"] a[href]','a[href*=\"/news/search\"]'];"
+                    + "'a[href*=\"/news/search\"]','a[href*=\"msn.com/\"]','a[href*=\"microsoftnews\"]','[class*=\"news\"] a[href]'];"
                     + "var out=[], seen={};"
                     + "for(var s=0;s<sel.length;s++){"
                     + " var els=document.querySelectorAll(sel[s]);"
@@ -106,7 +124,7 @@ final class BingTasks {
                     + "  if(h.indexOf('login')>=0) continue;"
                     + "  if(h.indexOf('http')!==0) continue;"
                     + "  seen[h]=1; out.push(h);"
-                    + "  if(out.length>=8) return JSON.stringify(out);"
+                    + "  if(out.length>=15) return JSON.stringify(out);"
                     + " }"
                     + "}"
                     + "return JSON.stringify(out);"
@@ -129,8 +147,9 @@ final class BingTasks {
                     + "}catch(e){return JSON.stringify({loggedIn:false});}"
                     + "})();";
 
-    private static final int TASK_DEADLINE_MS = 90000;
+    private static final int TASK_DEADLINE_MS = 140000;
     private static final int PROBE_TIMEOUT_MS = 12000;
+    private static final int ARTICLE_READ_MS = 3800;
 
     private interface ProbeCallback {
         void onResult(boolean loggedIn);
@@ -145,17 +164,21 @@ final class BingTasks {
     private boolean waitingLogin = false;
     private final List<String> newsHrefs = new ArrayList<>();
     private int newsIndex = 0;
+    private int targetArticlesThisBatch = 10;
+    private int verifyAttempts = 0;
+    private String newsStage = "init"; // init -> list -> article -> verify
     private boolean running = false;
     private boolean sawReadable = false;
     private boolean clickedCheckin = false;
-    private boolean newsSnapshotted = false;
     private int newsStart = -1;
+    private int newsMax = 30;
     private String[] checkinUrls = new String[0];
     private boolean loginMode = false;
     private boolean probing = false;
     private int probeGeneration = 0;
     private boolean ssoRedirected = false;
     private Runnable probeTimeout;
+    private Runnable articleTimer;
 
     BingTasks(MainActivity activity, WebView bing) {
         this.activity = activity;
@@ -218,9 +241,6 @@ final class BingTasks {
         });
     }
 
-    /**
-     * Check Android's native CookieManager for authenticated Bing or Microsoft Rewards cookies.
-     */
     boolean hasNativeSessionCookies() {
         try {
             CookieManager cm = CookieManager.getInstance();
@@ -233,10 +253,6 @@ final class BingTasks {
         return false;
     }
 
-    /**
-     * True if the user already signed into login.live.com in the WebView, even if
-     * the redirect back to www.bing.com hasn't completed yet.
-     */
     private boolean hasLiveComSessionCookies() {
         try {
             CookieManager cm = CookieManager.getInstance();
@@ -269,7 +285,6 @@ final class BingTasks {
         bing.loadUrl(BING_SSO_URL);
     }
 
-    /** Close the login sheet, flush cookies, and verify session immediately. */
     void finishLogin() {
         if (!loginMode) return;
         loginMode = false;
@@ -278,7 +293,6 @@ final class BingTasks {
 
         if (hasNativeSessionCookies() || hasLiveComSessionCookies()) {
             if (!hasNativeSessionCookies() && hasLiveComSessionCookies()) {
-                // Propagate live.com session cookie into bing.com in background
                 bing.loadUrl(BING_SSO_URL);
             }
             activity.deliverSession(true);
@@ -319,35 +333,43 @@ final class BingTasks {
 
     void start(String kind) {
         if (running) return;
-        if (loginMode) {
-            loginMode = false;
-        }
+        if (loginMode) loginMode = false;
         dropProbe();
         this.kind = kind == null ? "checkin" : kind;
         this.step = 0;
         this.waitingLogin = false;
         this.newsHrefs.clear();
         this.newsIndex = 0;
+        this.verifyAttempts = 0;
         this.running = true;
         this.sawReadable = false;
         this.clickedCheckin = false;
-        this.newsSnapshotted = false;
         this.newsStart = -1;
+        this.newsMax = 30;
         String mkt = BingMarket.get();
         this.checkinUrls = new String[] {
-                "https://www.bing.com/rewards/panelflyout?style=chrome&setmkt=" + mkt,
+                REWARDS_FLYOUT_BASE + "&setmkt=" + mkt,
                 "https://www.bing.com/?form=APMCS1&setmkt=" + mkt,
-                "https://rewards.bing.com/dashboard?setmkt=" + mkt
+                REWARDS_DASHBOARD + "?setmkt=" + mkt
         };
         handler.removeCallbacksAndMessages(null);
         handler.postDelayed(() -> {
-            if (running) finish(false, "no se pudo");
+            if (running) finish(false, "timeout");
         }, TASK_DEADLINE_MS);
         if ("news".equals(this.kind)) {
-            activity.setBingStatus(loc("Opening Bing News…", "Abriendo noticias Bing…", "Abrindo notícias do Bing…", "正在打开必应新闻…"));
-            bing.loadUrl("https://www.bing.com/news?form=APMCS1&setmkt=" + mkt + "&dcf=1");
+            this.newsStage = "init";
+            activity.setBingStatus(loc(
+                    "Checking news counter in Rewards…",
+                    "Verificando contador de noticias en Rewards…",
+                    "Verificando contador de notícias no Rewards…",
+                    "正在检查 Rewards 新闻进度…"));
+            bing.loadUrl(REWARDS_DASHBOARD + "?setmkt=" + mkt);
         } else {
-            activity.setBingStatus(loc("Opening Rewards for check-in…", "Abriendo Rewards para check-in…", "Abrindo Rewards para check-in…", "正在打开 Rewards 签到…"));
+            activity.setBingStatus(loc(
+                    "Running daily check-in in background…",
+                    "Ejecutando check-in diario en segundo plano…",
+                    "Executando check-in diário em segundo plano…",
+                    "正在后台执行每日签到…"));
             bing.loadUrl(checkinUrls[0]);
         }
     }
@@ -494,6 +516,7 @@ final class BingTasks {
         if (!running) return;
         if (isLogin(url)) {
             waitingLogin = true;
+            activity.showBingInteractive(true);
             activity.setBingStatus(loc(
                     "Sign in with your Microsoft account…",
                     "Inicia sesión con tu cuenta Microsoft…",
@@ -503,11 +526,12 @@ final class BingTasks {
         }
         if (waitingLogin) {
             waitingLogin = false;
+            activity.showBingInteractive(false);
             activity.setBingStatus(loc(
-                    "Session saved. Continuing…",
-                    "Sesión guardada. Continuando…",
-                    "Sessão salva. Continuando…",
-                    "会话已保存，正在继续…"));
+                    "Session saved. Continuing in background…",
+                    "Sesión guardada. Continuando en segundo plano…",
+                    "Sessão salva. Continuando em segundo plano…",
+                    "会话已保存，正在后台继续…"));
         }
         if ("news".equals(kind)) {
             handleNews(url);
@@ -556,19 +580,17 @@ final class BingTasks {
                     finish(true, checkinLabel(o));
                     return;
                 }
-                if (sawReadable || hasNativeSessionCookies() || clickedCheckin) {
+                if (clickedCheckin) {
                     finish(true, "Check-in 1/1");
                     return;
                 }
                 finish(false, "ask:no se pudo verificar check-in");
             });
-        }, 2000);
+        }, 2200);
     }
 
     private void handleNews(String url) {
-        if (!newsSnapshotted) {
-            newsSnapshotted = true;
-            final String page = url;
+        if ("init".equals(newsStage)) {
             handler.postDelayed(() -> {
                 if (!running) return;
                 bing.evaluateJavascript(SNAPSHOT_JS, value -> {
@@ -581,30 +603,115 @@ final class BingTasks {
                     JSONArray news = o.optJSONArray("news");
                     int done = (news != null && news.length() >= 2) ? news.optInt(0, 0) : 0;
                     int max = (news != null && news.length() >= 2 && news.optInt(1, 0) > 0) ? news.optInt(1, 30) : 30;
+                    newsStart = done;
+                    newsMax = max;
                     if (done >= max) {
                         finish(true, "Noticias " + done + "/" + max);
                         return;
                     }
-                    newsStart = done;
-                    collectNews(page);
+                    int needed = Math.max(1, (int) Math.ceil((max - done) / 3.0));
+                    targetArticlesThisBatch = Math.min(10, needed);
+                    newsStage = "list";
+                    String mkt = BingMarket.get();
+                    activity.setBingStatus(loc(
+                            "News " + done + "/" + max + " pts · loading Bing News…",
+                            "Noticias " + done + "/" + max + " pts · cargando Bing Noticias…",
+                            "Notícias " + done + "/" + max + " pts · carregando Bing Notícias…",
+                            "新闻 " + done + "/" + max + " 积分 · 正在加载必应新闻…"));
+                    bing.loadUrl("https://www.bing.com/news?form=APMCS1&setmkt=" + mkt + "&dcf=1");
                 });
             }, 1500);
             return;
         }
-        if (newsIndex > 0 && newsIndex <= newsHrefs.size()) {
-            handler.postDelayed(this::openNextArticle, 6000);
+
+        if ("list".equals(newsStage)) {
+            handler.postDelayed(() -> {
+                if (!running) return;
+                bing.evaluateJavascript(NEWS_HREFS_JS, value -> {
+                    if (!running) return;
+                    parseHrefs(value);
+                    if (newsHrefs.isEmpty()) {
+                        finish(false, "No se encontraron noticias para abrir");
+                        return;
+                    }
+                    targetArticlesThisBatch = Math.min(newsHrefs.size(), targetArticlesThisBatch);
+                    newsStage = "article";
+                    openNextArticle();
+                });
+            }, 1800);
+            return;
+        }
+
+        if ("article".equals(newsStage)) {
+            if (articleTimer != null) handler.removeCallbacks(articleTimer);
+            // Scroll the article every second for ~3.8 seconds so Bing credits the +3 coins
+            handler.postDelayed(() -> { if (running && "article".equals(newsStage)) bing.evaluateJavascript(SCROLL_ARTICLE_JS, null); }, 900);
+            handler.postDelayed(() -> { if (running && "article".equals(newsStage)) bing.evaluateJavascript(SCROLL_ARTICLE_JS, null); }, 1900);
+            handler.postDelayed(() -> { if (running && "article".equals(newsStage)) bing.evaluateJavascript(SCROLL_ARTICLE_JS, null); }, 2900);
+            articleTimer = this::openNextArticle;
+            handler.postDelayed(articleTimer, ARTICLE_READ_MS);
+            return;
+        }
+
+        if ("verify".equals(newsStage)) {
+            handler.postDelayed(this::verifyNewsCounterOnRewards, 1800);
         }
     }
 
-    private void collectNews(String url) {
-        if (url != null && url.contains("/news")) {
-            handler.postDelayed(() -> bing.evaluateJavascript(NEWS_HREFS_JS, value -> {
-                parseHrefs(value);
-                openNextArticle();
-            }), 1800);
+    private void openNextArticle() {
+        if (!running) return;
+        if (articleTimer != null) handler.removeCallbacks(articleTimer);
+        if (newsIndex >= targetArticlesThisBatch || newsIndex >= newsHrefs.size()) {
+            newsStage = "verify";
+            String mkt = BingMarket.get();
+            activity.setBingStatus(loc(
+                    "Verifying credited news points in Rewards…",
+                    "Verificando monedas de noticias en Rewards…",
+                    "Verificando moedas de notícias no Rewards…",
+                    "正在 Rewards 中验证新闻积分…"));
+            bing.loadUrl(REWARDS_DASHBOARD + "?setmkt=" + mkt);
             return;
         }
-        openNextArticle();
+        String href = newsHrefs.get(newsIndex);
+        newsIndex++;
+        activity.setBingStatus(loc(
+                "Reading news " + newsIndex + "/" + targetArticlesThisBatch + " (~3.5s for +3 pts)…",
+                "Leyendo noticia " + newsIndex + "/" + targetArticlesThisBatch + " (~3.5s para +3 monedas)…",
+                "Lendo notícia " + newsIndex + "/" + targetArticlesThisBatch + " (~3.5s para +3 moedas)…",
+                "正在阅读新闻 " + newsIndex + "/" + targetArticlesThisBatch + "（约 3.5 秒获取 +3 积分）…"));
+        bing.loadUrl(href);
+        // Safety fallback if a third-party news page takes too long to fire onPageFinished
+        articleTimer = this::openNextArticle;
+        handler.postDelayed(articleTimer, ARTICLE_READ_MS + 4500);
+    }
+
+    private void verifyNewsCounterOnRewards() {
+        if (!running) return;
+        bing.evaluateJavascript(SNAPSHOT_JS, value -> {
+            if (!running) return;
+            JSONObject o = parseObj(value);
+            JSONArray news = o.optJSONArray("news");
+            int now = (news != null && news.length() >= 2) ? news.optInt(0, -1) : -1;
+            int max = (news != null && news.length() >= 2 && news.optInt(1, 0) > 0) ? news.optInt(1, newsMax) : newsMax;
+            if (now >= max && max > 0) {
+                finish(true, "Noticias " + now + "/" + max);
+                return;
+            }
+            // If more articles are needed and we still have unread links in newsHrefs, read another batch
+            if (now >= 0 && now < max && newsIndex < newsHrefs.size() && verifyAttempts < 2) {
+                verifyAttempts++;
+                int stillNeeded = Math.max(1, (int) Math.ceil((max - now) / 3.0));
+                targetArticlesThisBatch = Math.min(newsHrefs.size(), newsIndex + stillNeeded);
+                newsStage = "article";
+                openNextArticle();
+                return;
+            }
+            if (now > newsStart && now > 0) {
+                finish(true, "Noticias " + now + "/" + max);
+                return;
+            }
+            finish(false, "ask:verifica noticias en Rewards");
+        });
     }
 
     private static String decodeJs(String value) throws Exception {
@@ -644,47 +751,6 @@ final class BingTasks {
                 newsHrefs.add(arr.getString(i));
             }
         } catch (Exception ignored) {}
-    }
-
-    private void openNextArticle() {
-        if (!running) return;
-        if (newsHrefs.isEmpty()) {
-            finish(false, "No se encontraron noticias para abrir");
-            return;
-        }
-        if (newsIndex >= newsHrefs.size() || newsIndex >= 6) {
-            verifyNews();
-            return;
-        }
-        String href = newsHrefs.get(newsIndex);
-        newsIndex++;
-        int totalArts = Math.min(6, newsHrefs.size());
-        activity.setBingStatus(loc(
-                "Reading article " + newsIndex + "/" + totalArts + "…",
-                "Leyendo artículo " + newsIndex + "/" + totalArts + "…",
-                "Lendo artigo " + newsIndex + "/" + totalArts + "…",
-                "正在阅读文章 " + newsIndex + "/" + totalArts + "…"));
-        bing.loadUrl(href);
-    }
-
-    private void verifyNews() {
-        bing.evaluateJavascript(SNAPSHOT_JS, value -> {
-            if (!running) return;
-            JSONObject o = parseObj(value);
-            JSONArray news = o.optJSONArray("news");
-            int now = news == null ? -1 : news.optInt(0, -1);
-            int max = (news != null && news.optInt(1, 0) > 0) ? news.optInt(1, 30) : 30;
-            if (newsStart >= 0 && now > newsStart) {
-                finish(true, "Noticias " + now + "/" + max);
-                return;
-            }
-            int credited = Math.min(max, Math.max(0, newsStart) + (newsIndex * 3));
-            if (credited > 0) {
-                finish(true, "Noticias " + credited + "/" + max);
-                return;
-            }
-            finish(false, "ask:verifica noticias en Rewards");
-        });
     }
 
     private void finish(boolean ok, String detail) {

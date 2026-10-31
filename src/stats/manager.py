@@ -445,39 +445,12 @@ class StatsManager:
 
         if scope == "today":
             stats["daily"].pop(today, None)
-            if isinstance(current_bal, int):
-                stats["daily"][today] = {
-                    "pc": 0,
-                    "mobile": 0,
-                    "cards": 0,
-                    "earn": 0,
-                    "quests": 0,
-                    "runs": 0,
-                    "start_balance": current_bal,
-                    "end_balance": current_bal,
-                    "verified_points": 0,
-                    "points_delta": 0,
-                    "points_estimate": 0,
-                }
             stats["last_session"] = dict(fresh["last_session"])
             if isinstance(current_bal, int):
                 stats["balance"]["previous"] = current_bal
         elif scope == "chart":
             stats["daily"] = {}
             if isinstance(current_bal, int):
-                stats["daily"][today] = {
-                    "pc": 0,
-                    "mobile": 0,
-                    "cards": 0,
-                    "earn": 0,
-                    "quests": 0,
-                    "runs": 0,
-                    "start_balance": current_bal,
-                    "end_balance": current_bal,
-                    "verified_points": 0,
-                    "points_delta": 0,
-                    "points_estimate": 0,
-                }
                 stats["balance"]["previous"] = current_bal
             stats["last_session"] = dict(fresh["last_session"])
         elif scope == "lifetime":
@@ -489,19 +462,6 @@ class StatsManager:
                     "current": current_bal,
                     "previous": current_bal,
                     "updated_at": now_iso,
-                }
-                stats["daily"][today] = {
-                    "pc": 0,
-                    "mobile": 0,
-                    "cards": 0,
-                    "earn": 0,
-                    "quests": 0,
-                    "runs": 0,
-                    "start_balance": current_bal,
-                    "end_balance": current_bal,
-                    "verified_points": 0,
-                    "points_delta": 0,
-                    "points_estimate": 0,
                 }
 
         self.save_stats(stats)

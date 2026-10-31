@@ -122,7 +122,21 @@
     </section>
 
     <!-- Reset confirmation modal -->
-    <div id="reset_stats_modal" class="modal-backdrop" hidden style="position:fixed;inset:0;background:rgba(6,8,14,0.78);display:flex;align-items:center;justify-content:center;z-index:100;">
+    <style>
+      #reset_stats_modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(6, 8, 14, 0.78);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+      }
+      #reset_stats_modal[hidden] {
+        display: none !important;
+      }
+    </style>
+    <div id="reset_stats_modal" class="modal-backdrop" hidden>
       <div class="modal-box" role="dialog" aria-modal="true" style="background:var(--surface-1,#141821);border:1px solid var(--border,#252b3b);border-radius:14px;padding:18px;width:min(380px,92vw);">
         <h3 style="margin:0 0 8px;font-size:15px;" data-i18n="stats.reset_title">Reset statistics</h3>
         <p style="margin:0 0 12px;font-size:12.5px;color:var(--text-muted,#9aa4b8);" data-i18n="stats.reset_desc">Choose which statistics or chart data you want to reset for this account:</p>
@@ -346,6 +360,8 @@
             earnPts = verifiedTotal;
           }
         }
+        const finalTotal = pcPts + mobilePts + dailyPts + earnPts + questPts;
+        if (finalTotal <= 0 && !(v.runs > 0)) continue;
         byDay.set(key, {
           pc: pcPts,
           mobile: mobilePts,
@@ -546,23 +562,30 @@
       const resetModal = document.getElementById('reset_stats_modal');
       const resetCancel = document.getElementById('reset_cancel_btn');
       const resetConfirm = document.getElementById('reset_confirm_btn');
+      function closeResetModal() {
+        if (resetModal) resetModal.hidden = true;
+      }
       if (resetBtn && resetModal) {
         resetBtn.addEventListener('click', function () {
           resetModal.hidden = false;
         });
-      }
-      if (resetCancel && resetModal) {
-        resetCancel.addEventListener('click', function () {
-          resetModal.hidden = true;
+        resetModal.addEventListener('click', function (ev) {
+          if (ev.target === resetModal) closeResetModal();
         });
       }
+      if (resetCancel && resetModal) {
+        resetCancel.addEventListener('click', closeResetModal);
+      }
+      document.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Escape') closeResetModal();
+      });
       if (resetConfirm && resetModal) {
         resetConfirm.addEventListener('click', function () {
           const checked = document.querySelector('input[name="reset_scope"]:checked');
           const scope = checked ? checked.value : 'chart';
           resetConfirm.disabled = true;
+          closeResetModal();
           pywebview.api.reset_stats(scope).then(function (stats) {
-            resetModal.hidden = true;
             if (stats) render_current_stats(stats);
             pywebview.api.get_all_stats().then(render_accounts);
           }).catch(function (err) {

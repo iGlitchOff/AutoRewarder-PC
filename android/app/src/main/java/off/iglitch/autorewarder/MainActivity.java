@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
         ui.setOverScrollMode(View.OVER_SCROLL_NEVER);
         ui.setVerticalScrollBarEnabled(false);
         ui.setHorizontalScrollBarEnabled(false);
+        ui.setTranslationZ(5f);
         bing.setBackgroundColor(Color.parseColor("#101827"));
 
         @SuppressLint("SetJavaScriptEnabled")
@@ -163,21 +164,41 @@ public class MainActivity extends Activity {
         notifyQrFailed(err == null || err.isEmpty() ? "camera_closed" : err);
     }
 
+    /**
+     * Run Bing tasks (Check-in / News) in the background WebView behind the main UI
+     * so the user stays on the AutoRewarder dashboard while pages load and scroll.
+     */
     void startBingTask(String kind) {
         runOnUiThread(() -> {
             if (tasks != null && tasks.isRunning()) {
                 return;
             }
-            bingWrap.setVisibility(View.VISIBLE);
-            setBingStatus("Microsoft Rewards");
+            showBingInteractive(false);
             tasks.start(kind);
+        });
+    }
+
+    void showBingInteractive(boolean interactive) {
+        runOnUiThread(() -> {
+            if (bingWrap == null) return;
+            bingWrap.setVisibility(View.VISIBLE);
+            if (interactive) {
+                bingWrap.setAlpha(1f);
+                bingWrap.setTranslationZ(20f);
+                bingWrap.setClickable(true);
+            } else {
+                // Keep WebView attached & full-size for JS/scroll execution, but behind #ui
+                bingWrap.setAlpha(0.01f);
+                bingWrap.setTranslationZ(0f);
+                bingWrap.setClickable(false);
+            }
         });
     }
 
     void openRewardsLogin() {
         runOnUiThread(() -> {
             if (tasks == null) return;
-            bingWrap.setVisibility(View.VISIBLE);
+            showBingInteractive(true);
             setBingStatus("Microsoft Rewards");
             tasks.openLogin();
         });
@@ -204,7 +225,11 @@ public class MainActivity extends Activity {
 
     void hideBingPanel() {
         runOnUiThread(() -> {
-            if (bingWrap != null) bingWrap.setVisibility(View.GONE);
+            if (bingWrap != null) {
+                bingWrap.setTranslationZ(0f);
+                bingWrap.setAlpha(0f);
+                bingWrap.setVisibility(View.GONE);
+            }
         });
     }
 
@@ -219,7 +244,13 @@ public class MainActivity extends Activity {
     }
 
     void setBingStatus(String text) {
-        runOnUiThread(() -> bingStatus.setText(text));
+        runOnUiThread(() -> {
+            if (bingStatus != null) bingStatus.setText(text);
+            if (ui != null && text != null && !text.isEmpty()) {
+                String safe = text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ");
+                ui.evaluateJavascript("window.onBingProgress && onBingProgress(\"" + safe + "\")", null);
+            }
+        });
     }
 
     void onBingTaskDone(boolean ok, String detail) {
@@ -229,7 +260,11 @@ public class MainActivity extends Activity {
     void hideBing(boolean ok, String detail) {
         runOnUiThread(() -> {
             if (tasks != null) tasks.cancel();
-            bingWrap.setVisibility(View.GONE);
+            if (bingWrap != null) {
+                bingWrap.setTranslationZ(0f);
+                bingWrap.setAlpha(0f);
+                bingWrap.setVisibility(View.GONE);
+            }
             String safe = (detail == null ? "" : detail).replace("\\", "\\\\").replace("\"", "\\\"");
             ui.evaluateJavascript(
                     "window.onBingTask && onBingTask(" + ok + ",\"" + safe + "\")",
@@ -300,7 +335,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (bingWrap.getVisibility() == View.VISIBLE) {
+        if (bingWrap.getVisibility() == View.VISIBLE && bingWrap.getAlpha() > 0.5f) {
             closeBing();
             return;
         }

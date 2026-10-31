@@ -2901,6 +2901,9 @@ class AutoRewarderAPI:
         elif bucket.get("points_delta") is not None:
             today_points = max(0, int(bucket.get("points_delta") or 0))
             today_is_estimate = False
+        elif isinstance(balance, int):
+            today_points = 0
+            today_is_estimate = False
         else:
             today_points = None
             today_is_estimate = True

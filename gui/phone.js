@@ -1,4 +1,4 @@
-/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.5). */
+/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.6). */
 function native() {
   try { return window.Android || null; } catch (e) { return null; }
 }
@@ -1060,7 +1060,7 @@ function applyMarket(market) {
 function showAppVersion() {
   const el = document.getElementById("app_version");
   if (!el) return;
-  let ver = "4.4.5";
+  let ver = "4.4.6";
   try {
     const n = native();
     if (n && n.appVersionName) ver = String(n.appVersionName() || ver);
@@ -1247,31 +1247,25 @@ function runPhone(kind, forceAutomated) {
   const label = kind === "news" ? t("phone.news") : t("phone.checkin");
   state.askingVerify = false;
   state.pendingVerify = kind;
+  state.verifying = true;
   updateBingUi();
-  if (forceAutomated || !bingInstalled()) {
-    log(tf("phone.executing_task", { task: label }));
-    setBingBanner(tf("phone.executing_task", { task: label }), false);
-    state.verifying = true;
-    updateBingUi();
-    if (native() && native().runTask) {
-      native().runTask(kind);
-      return;
-    }
+  log(tf("phone.executing_task", { task: label }));
+  setBingBanner(tf("phone.executing_task", { task: label }), false);
+  if (native() && native().runTask) {
+    native().runTask(kind);
+    return;
   }
-  let opened = false;
-  try {
-    if (native() && native().openBingApp) opened = !!native().openBingApp(kind);
-  } catch (e) {}
-  if (opened) {
-    log(tf("phone.executing_task", { task: label }));
-    setBingBanner(tf("phone.executing_task", { task: label }), false);
-  } else {
-    state.verifying = true;
-    updateBingUi();
-    if (native() && native().runTask) native().runTask(kind);
-    else if (native() && native().openBing) native().openBing(kind);
+  if (native() && native().openBing) {
+    native().openBing(kind);
   }
 }
+
+window.onBingProgress = function (msg) {
+  if (!msg) return;
+  if (state.verifying || state.pendingVerify) {
+    setBingBanner(msg, false);
+  }
+};
 
 window.onBingTask = function (ok, detail) {
   const kind = state.pendingVerify || "task";
@@ -1540,7 +1534,7 @@ async function checkPhoneUpdate(manual) {
   }
   const n = native();
   try {
-    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.5") : "4.4.5";
+    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.6") : "4.4.6";
     const mineCode = n && n.appVersionCode ? Number(n.appVersionCode() || 0) : 0;
     const newerThanMine = function (update) {
       if (!update) return false;
