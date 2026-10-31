@@ -344,12 +344,20 @@ final class BingTasks {
             if (running) finish(false, "no se pudo");
         }, TASK_DEADLINE_MS);
         if ("news".equals(this.kind)) {
-            activity.setBingStatus("Abriendo noticias Bing…");
+            activity.setBingStatus(loc("Opening Bing News…", "Abriendo noticias Bing…", "Abrindo notícias do Bing…", "正在打开必应新闻…"));
             bing.loadUrl("https://www.bing.com/news?form=APMCS1&setmkt=" + mkt + "&dcf=1");
         } else {
-            activity.setBingStatus("Abriendo Rewards para check-in…");
+            activity.setBingStatus(loc("Opening Rewards for check-in…", "Abriendo Rewards para check-in…", "Abrindo Rewards para check-in…", "正在打开 Rewards 签到…"));
             bing.loadUrl(checkinUrls[0]);
         }
+    }
+
+    private String loc(String en, String es, String pt, String zh) {
+        String lang = activity.currentLang();
+        if ("es".equals(lang)) return es;
+        if ("pt".equals(lang)) return pt;
+        if ("zh".equals(lang)) return zh;
+        return en;
     }
 
     void cancel() {
@@ -426,7 +434,11 @@ final class BingTasks {
                 bing.loadUrl(BING_SSO_URL);
                 return;
             }
-            activity.setBingStatus("Inicia sesión con tu cuenta Microsoft.");
+            activity.setBingStatus(loc(
+                    "Sign in with your Microsoft account.",
+                    "Inicia sesión con tu cuenta Microsoft.",
+                    "Entre com sua conta Microsoft.",
+                    "请使用您的 Microsoft 账户登录。"));
             return;
         }
         bing.evaluateJavascript(PROBE_DOM_JS, value -> {
@@ -482,12 +494,20 @@ final class BingTasks {
         if (!running) return;
         if (isLogin(url)) {
             waitingLogin = true;
-            activity.setBingStatus("Inicia sesión con tu cuenta Microsoft…");
+            activity.setBingStatus(loc(
+                    "Sign in with your Microsoft account…",
+                    "Inicia sesión con tu cuenta Microsoft…",
+                    "Entre com sua conta Microsoft…",
+                    "请使用您的 Microsoft 账户登录…"));
             return;
         }
         if (waitingLogin) {
             waitingLogin = false;
-            activity.setBingStatus("Sesión guardada. Continuando…");
+            activity.setBingStatus(loc(
+                    "Session saved. Continuing…",
+                    "Sesión guardada. Continuando…",
+                    "Sessão salva. Continuando…",
+                    "会话已保存，正在继续…"));
         }
         if ("news".equals(kind)) {
             handleNews(url);
@@ -516,7 +536,7 @@ final class BingTasks {
                     }
                     step++;
                     if (step < checkinUrls.length) {
-                        activity.setBingStatus("Check-in, paso " + (step + 1) + "/" + checkinUrls.length + "…");
+                        activity.setBingStatus("Check-in (" + (step + 1) + "/" + checkinUrls.length + ")…");
                         bing.loadUrl(checkinUrls[step]);
                     } else {
                         confirmCheckin();
@@ -638,7 +658,12 @@ final class BingTasks {
         }
         String href = newsHrefs.get(newsIndex);
         newsIndex++;
-        activity.setBingStatus("Leyendo artículo " + newsIndex + "/" + Math.min(6, newsHrefs.size()) + "…");
+        int totalArts = Math.min(6, newsHrefs.size());
+        activity.setBingStatus(loc(
+                "Reading article " + newsIndex + "/" + totalArts + "…",
+                "Leyendo artículo " + newsIndex + "/" + totalArts + "…",
+                "Lendo artigo " + newsIndex + "/" + totalArts + "…",
+                "正在阅读文章 " + newsIndex + "/" + totalArts + "…"));
         bing.loadUrl(href);
     }
 

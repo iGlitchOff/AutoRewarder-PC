@@ -3,6 +3,7 @@ package off.iglitch.autorewarder;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -23,6 +24,7 @@ import android.widget.TextView;
 import androidx.core.content.FileProvider;
 
 import java.io.File;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final int REQ_CAMERA = 42;
@@ -32,6 +34,7 @@ public class MainActivity extends Activity {
     private WebView bing;
     private LinearLayout bingWrap;
     private TextView bingStatus;
+    private Button bingClose;
     private AndroidJs js;
     private BingTasks tasks;
     private File pendingApk;
@@ -44,8 +47,12 @@ public class MainActivity extends Activity {
         bing = findViewById(R.id.bing);
         bingWrap = findViewById(R.id.bing_wrap);
         bingStatus = findViewById(R.id.bing_status);
-        Button close = findViewById(R.id.bing_close);
-        close.setOnClickListener(v -> closeBing());
+        bingClose = findViewById(R.id.bing_close);
+        bingClose.setOnClickListener(v -> closeBing());
+
+        String savedLang = getSharedPreferences("autorewarder", Context.MODE_PRIVATE)
+                .getString("ui_lang", Locale.getDefault().getLanguage());
+        applyNativeLang(savedLang);
 
         ui.setBackgroundColor(Color.parseColor("#101827"));
         ui.setOverScrollMode(View.OVER_SCROLL_NEVER);
@@ -90,6 +97,28 @@ public class MainActivity extends Activity {
         tasks = new BingTasks(this, bing);
     }
 
+    String currentLang() {
+        String lang = getSharedPreferences("autorewarder", Context.MODE_PRIVATE)
+                .getString("ui_lang", "en");
+        if (lang == null) return "en";
+        lang = lang.toLowerCase(Locale.US);
+        if (lang.startsWith("es")) return "es";
+        if (lang.startsWith("pt")) return "pt";
+        if (lang.startsWith("zh")) return "zh";
+        return "en";
+    }
+
+    void applyNativeLang(String lang) {
+        runOnUiThread(() -> {
+            if (bingClose == null) return;
+            String l = lang == null ? "en" : lang.toLowerCase(Locale.US);
+            if (l.startsWith("es")) bingClose.setText("Cerrar");
+            else if (l.startsWith("pt")) bingClose.setText("Fechar");
+            else if (l.startsWith("zh")) bingClose.setText("关闭");
+            else bingClose.setText("Close");
+        });
+    }
+
     void startQrScan() {
         runOnUiThread(() -> {
             if (checkSelfPermission(Manifest.permission.CAMERA)
@@ -114,7 +143,7 @@ public class MainActivity extends Activity {
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             startActivityForResult(new Intent(this, QrScanActivity.class), REQ_SCAN);
         } else {
-            notifyQrFailed("Sin permiso de cámara. Escríbelo a mano o permite la cámara y vuelve a escanear.");
+            notifyQrFailed("camera_denied");
         }
     }
 
@@ -131,19 +160,16 @@ public class MainActivity extends Activity {
             }
         }
         String err = data != null ? data.getStringExtra(QrScanActivity.EXTRA_ERROR) : null;
-        notifyQrFailed(err == null || err.isEmpty()
-                ? "Cámara cerrada. Escribe el código o vuelve a escanear."
-                : err);
+        notifyQrFailed(err == null || err.isEmpty() ? "camera_closed" : err);
     }
 
     void startBingTask(String kind) {
         runOnUiThread(() -> {
             if (tasks != null && tasks.isRunning()) {
-                setBingStatus("Ya hay una tarea Bing en curso.");
                 return;
             }
             bingWrap.setVisibility(View.VISIBLE);
-            setBingStatus("Preparando Bing…");
+            setBingStatus("Microsoft Rewards");
             tasks.start(kind);
         });
     }
@@ -152,7 +178,7 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> {
             if (tasks == null) return;
             bingWrap.setVisibility(View.VISIBLE);
-            setBingStatus("Inicia sesión con la cuenta Microsoft.");
+            setBingStatus("Microsoft Rewards");
             tasks.openLogin();
         });
     }
@@ -188,7 +214,7 @@ public class MainActivity extends Activity {
                 tasks.finishLogin();
                 return;
             }
-            hideBing(false, "Cerrado");
+            hideBing(false, "closed");
         });
     }
 
@@ -224,6 +250,13 @@ public class MainActivity extends Activity {
         }
     }
 
+    void onUpdateProgress(int pct) {
+        runOnUiThread(() -> {
+            if (ui == null) return;
+            ui.evaluateJavascript("window.onUpdateProgress && onUpdateProgress(" + pct + ")", null);
+        });
+    }
+
     void onUpdateFailed(String message) {
         runOnUiThread(() -> {
             if (ui == null) return;
@@ -235,7 +268,7 @@ public class MainActivity extends Activity {
     void installApk(File apk) {
         runOnUiThread(() -> {
             if (apk == null || !apk.isFile() || apk.length() < 100) {
-                onUpdateFailed("APK no descargado.");
+                onUpdateFailed("apk_invalid");
                 return;
             }
             if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
@@ -245,7 +278,7 @@ public class MainActivity extends Activity {
                             Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                             Uri.parse("package:" + getPackageName())));
                 } catch (Exception e) {
-                    onUpdateFailed("Activa instalar apps de esta fuente en Ajustes.");
+                    onUpdateFailed("install_permission_needed");
                 }
                 return;
             }
@@ -253,15 +286,14 @@ public class MainActivity extends Activity {
                 Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", apk);
                 Intent intent = new Intent(Intent.ACTION_VIEW);
                 intent.setDataAndType(uri, "application/vnd.android.package-archive");
+                intent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true);
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(intent);
                 if (ui != null) {
-                    ui.evaluateJavascript(
-                            "window.onUpdateReady && onUpdateReady()",
-                            null);
+                    ui.evaluateJavascript("window.onUpdateReady && onUpdateReady()", null);
                 }
             } catch (Exception e) {
-                onUpdateFailed("No se pudo abrir el instalador.");
+                onUpdateFailed("installer_failed");
             }
         });
     }

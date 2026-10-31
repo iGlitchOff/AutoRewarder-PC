@@ -1,6 +1,7 @@
 package off.iglitch.autorewarder;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -17,7 +18,9 @@ import com.journeyapps.barcodescanner.BarcodeCallback;
 import com.journeyapps.barcodescanner.DecoratedBarcodeView;
 import com.journeyapps.barcodescanner.camera.CameraSettings;
 
-/** Modernized ZXing QR camera preview with proper DP scaling and pill controls. */
+import java.util.Locale;
+
+/** Modernized ZXing QR camera preview with localized UI (en, es, pt, zh). */
 public class QrScanActivity extends Activity {
     public static final String EXTRA_TEXT = "qr_text";
     public static final String EXTRA_ERROR = "qr_error";
@@ -30,11 +33,40 @@ public class QrScanActivity extends Activity {
                 TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics()));
     }
 
+    private String currentLang() {
+        String lang = getSharedPreferences("autorewarder", Context.MODE_PRIVATE)
+                .getString("ui_lang", Locale.getDefault().getLanguage());
+        if (lang == null) return "en";
+        lang = lang.toLowerCase(Locale.US);
+        if (lang.startsWith("es")) return "es";
+        if (lang.startsWith("pt")) return "pt";
+        if (lang.startsWith("zh")) return "zh";
+        return "en";
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        String lang = currentLang();
+        String titleText = "Scan QR code";
+        String subText = "Point at the Step 2 QR on your PC";
+        String cancelText = "Cancel";
+        if ("es".equals(lang)) {
+            titleText = "Escanear código QR";
+            subText = "Apunta al QR del Paso 2 en el PC";
+            cancelText = "Cancelar";
+        } else if ("pt".equals(lang)) {
+            titleText = "Escanear código QR";
+            subText = "Aponte para o QR do Passo 2 no PC";
+            cancelText = "Cancelar";
+        } else if ("zh".equals(lang)) {
+            titleText = "扫描二维码";
+            subText = "对准电脑上第 2 步的二维码";
+            cancelText = "取消";
+        }
 
         scanner = new DecoratedBarcodeView(this);
         CameraSettings settings = new CameraSettings();
@@ -47,7 +79,6 @@ public class QrScanActivity extends Activity {
         root.addView(scanner, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        // Top bar container
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -64,14 +95,14 @@ public class QrScanActivity extends Activity {
         titleWrap.setLayoutParams(titleWrapLp);
 
         TextView title = new TextView(this);
-        title.setText("Escanear código QR");
+        title.setText(titleText);
         title.setTextColor(Color.WHITE);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         titleWrap.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Apunta al QR de AutoRewarder en el PC");
+        subtitle.setText(subText);
         subtitle.setTextColor(0xFF94A3B8);
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         titleWrap.addView(subtitle);
@@ -79,7 +110,7 @@ public class QrScanActivity extends Activity {
         topBar.addView(titleWrap);
 
         TextView cancel = new TextView(this);
-        cancel.setText("Cancelar");
+        cancel.setText(cancelText);
         cancel.setTextColor(Color.WHITE);
         cancel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         cancel.setTypeface(Typeface.DEFAULT_BOLD);
@@ -90,7 +121,7 @@ public class QrScanActivity extends Activity {
         pill.setCornerRadius(dp(999));
         pill.setStroke(dp(1), 0x44FFFFFF);
         cancel.setBackground(pill);
-        cancel.setOnClickListener(v -> finishCanceled("Cámara cerrada. Escribe el código o vuelve a escanear."));
+        cancel.setOnClickListener(v -> finishCanceled("camera_closed"));
         topBar.addView(cancel);
 
         root.addView(topBar, new FrameLayout.LayoutParams(
@@ -125,7 +156,7 @@ public class QrScanActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        finishCanceled("Cámara cerrada. Escribe el código o vuelve a escanear.");
+        finishCanceled("camera_closed");
     }
 
     private void finishCanceled(String message) {

@@ -193,6 +193,18 @@ public class AndroidJs {
     }
 
     @JavascriptInterface
+    public void setUiLang(String lang) {
+        String safe = (lang == null || lang.trim().isEmpty()) ? "en" : lang.trim().toLowerCase(Locale.US);
+        prefs.edit().putString("ui_lang", safe).apply();
+        activity.applyNativeLang(safe);
+    }
+
+    @JavascriptInterface
+    public String getUiLang() {
+        return prefs.getString("ui_lang", "");
+    }
+
+    @JavascriptInterface
     public void cancelDownloadUpdate() {
         downloadCancel.set(true);
     }
@@ -254,7 +266,9 @@ public class AndroidJs {
                     return;
                 }
                 long written = 0;
+                int lastPct = -1;
                 boolean cancelled = false;
+                activity.onUpdateProgress(0);
                 try (InputStream in = conn.getInputStream();
                      FileOutputStream out = new FileOutputStream(apk)) {
                     byte[] buf = new byte[64 * 1024];
@@ -266,6 +280,13 @@ public class AndroidJs {
                         }
                         written += n;
                         out.write(buf, 0, n);
+                        if (expected > 0) {
+                            int pct = (int) Math.min(99L, (written * 100L) / expected);
+                            if (pct != lastPct) {
+                                lastPct = pct;
+                                activity.onUpdateProgress(pct);
+                            }
+                        }
                     }
                     if (!cancelled) out.getFD().sync();
                 }
@@ -300,6 +321,7 @@ public class AndroidJs {
                     activity.onUpdateFailed(why);
                     return;
                 }
+                activity.onUpdateProgress(100);
                 activity.installApk(apk);
             } catch (Exception e) {
                 //noinspection ResultOfMethodCallIgnored

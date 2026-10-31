@@ -1,4 +1,4 @@
-/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.4). */
+/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.5). */
 function native() {
   try { return window.Android || null; } catch (e) { return null; }
 }
@@ -84,9 +84,19 @@ function httpNativeAsync(method, url, body, token, timeoutMs) {
 
 function initLanguage() {
   try {
+    const n = native();
+    if (n && typeof n.getUiLang === "function") {
+      const natLang = String(n.getUiLang() || "").trim();
+      if (natLang && ["en", "es", "pt", "zh"].indexOf(natLang) >= 0) {
+        applyUiLanguage(natLang);
+        return;
+      }
+    }
+  } catch (e) {}
+  try {
     const saved = localStorage.getItem("ar_ui_lang");
-    if (saved && typeof set_ui_lang === "function") {
-      set_ui_lang(saved);
+    if (saved && ["en", "es", "pt", "zh"].indexOf(saved) >= 0) {
+      applyUiLanguage(saved);
       return;
     }
   } catch (e) {}
@@ -95,13 +105,84 @@ function initLanguage() {
   if (nav.indexOf("en") === 0) lang = "en";
   else if (nav.indexOf("pt") === 0) lang = "pt";
   else if (nav.indexOf("zh") === 0) lang = "zh";
-  if (typeof set_ui_lang === "function") set_ui_lang(lang);
+  applyUiLanguage(lang);
 }
 
 function applyUiLanguage(locale) {
   if (!locale || typeof set_ui_lang !== "function") return;
-  try { localStorage.setItem("ar_ui_lang", locale); } catch (e) {}
-  set_ui_lang(locale);
+  const clean = String(locale).trim().toLowerCase().split(/[-_]/)[0];
+  if (["en", "es", "pt", "zh"].indexOf(clean) < 0) return;
+  try { localStorage.setItem("ar_ui_lang", clean); } catch (e) {}
+  try {
+    const n = native();
+    if (n && typeof n.setUiLang === "function") n.setUiLang(clean);
+  } catch (e) {}
+  if (typeof _uiLang === "undefined" || _uiLang !== clean) {
+    set_ui_lang(clean);
+  } else {
+    set_ui_lang(clean);
+  }
+}
+
+/**
+ * Automatically mirror the PC's language, active account, membership, market,
+ * and search counts whenever any response arrives from the PC bridge.
+ */
+function syncPcConfig(data) {
+  if (!data || typeof data !== "object") return;
+  if (data.ui_locale) {
+    const clean = String(data.ui_locale).trim().toLowerCase().split(/[-_]/)[0];
+    if (["en", "es", "pt", "zh"].indexOf(clean) >= 0 && (typeof _uiLang === "undefined" || _uiLang !== clean)) {
+      applyUiLanguage(clean);
+    }
+  }
+  let accountChanged = false;
+  if (typeof data.account === "string" && data.account && data.account !== state.account) {
+    state.account = data.account;
+    accountChanged = true;
+  }
+  if (typeof data.membership === "string" && data.membership && data.membership !== state.membership) {
+    state.membership = data.membership;
+    accountChanged = true;
+  }
+  if (typeof data.ready === "boolean" && data.ready !== state.ready) {
+    state.ready = data.ready;
+    accountChanged = true;
+  }
+  if (data.market) {
+    applyMarket(data.market);
+  }
+  if (data.queries && typeof data.queries === "object") {
+    const pcEl = document.getElementById("count_pc");
+    const mobEl = document.getElementById("count_mobile");
+    if (pcEl && data.queries.pc != null && document.activeElement !== pcEl) {
+      pcEl.value = data.queries.pc;
+    }
+    if (mobEl && data.queries.mobile != null && document.activeElement !== mobEl) {
+      mobEl.value = data.queries.mobile;
+    }
+  }
+  if (accountChanged && state.token) {
+    persist();
+    renderAccountHeader();
+  }
+}
+
+function renderAccountHeader() {
+  const msName = document.getElementById("ms_name");
+  const msAvatar = document.getElementById("ms_avatar");
+  const phName = document.getElementById("ph_name");
+  const msMeta = document.getElementById("ms_meta");
+  const phMeta = document.getElementById("ph_meta");
+  if (msName) msName.textContent = state.account || t("phone.account");
+  if (msAvatar) msAvatar.textContent = initials(state.account || "MS");
+  if (phName) phName.textContent = state.phone || deviceName();
+  const ready = state.ready ? t("phone.ready_state") : t("phone.setup_state");
+  const mem = typeof translate_runtime_text === "function"
+    ? translate_runtime_text(state.membership || "Microsoft Rewards")
+    : (state.membership || "Microsoft Rewards");
+  if (msMeta) msMeta.textContent = ready + " · " + mem + " · " + t("phone.by_microsoft");
+  if (phMeta) phMeta.textContent = ready + " · " + mem + " · " + t("phone.by_phone");
 }
 
 function log(msg) {
@@ -155,6 +236,7 @@ function persist() {
     account: state.account,
     membership: state.membership,
     phone: state.phone,
+    ready: state.ready,
   });
 }
 
@@ -275,7 +357,6 @@ function protocolOk(data) {
   const p = Number(data.protocol);
   if (!isFinite(p)) return true;
   if (p > PHONE_PROTOCOL) {
-    log("El PC usa protocolo " + p + ". Actualiza AutoRewarder Mobile.");
     return false;
   }
   return true;
@@ -292,8 +373,7 @@ function androidId() {
 function dropLink(reason) {
   clearPair();
   showPair();
-  const status = document.getElementById("pair_status");
-  if (status && reason) status.textContent = typeof translate_runtime_text === "function" ? translate_runtime_text(reason) : reason;
+  if (reason) setPairStatus(reason);
   try { if (native() && native().discover) native().discover(); } catch (e) {}
 }
 
@@ -303,9 +383,15 @@ function forgetStaleOn(url) {
   const base = String(url).replace(/\/$/, "");
   const body = { android_id: id, name: deviceName(), model: deviceModel() };
   sendHttp("POST", base + "/phone/forget", body, "", 2500).catch(function () {});
+  sendHttp("GET", base + "/discover", null, "", 2500).then(function (txt) {
+    try {
+      const d = JSON.parse(txt || "{}");
+      if (d && d.ui_locale) syncPcConfig(d);
+    } catch (e) {}
+  }).catch(function () {});
 }
 
-async function request(method, path, body) {
+async function request(method, path, body, customTimeoutMs) {
   const urls = bases();
   if (!urls.length) throw new Error("not linked");
   let last = null;
@@ -315,11 +401,12 @@ async function request(method, path, body) {
       const url = urls[i] + path;
       try {
         const text = await sendHttp(
-          method, url, body, state.token, isLanUrl(url) ? 2200 : 12000
+          method, url, body, state.token, customTimeoutMs || (isLanUrl(url) ? 2200 : 12000)
         );
         const data = JSON.parse(text || "{}");
         if (data && data.error === "auth") throw new Error("auth");
         if (!protocolOk(data)) throw new Error("protocol");
+        if (data && typeof data === "object") syncPcConfig(data);
         if (isPcAppError(data)) return data;
         if (data && data.ok === false && data.error && data.status == null) {
           last = new Error(data.error);
@@ -343,13 +430,7 @@ async function request(method, path, body) {
 function showMain() {
   document.getElementById("pair_screen").hidden = true;
   document.getElementById("main_screen").hidden = false;
-  document.getElementById("ms_name").textContent = state.account || "Microsoft account";
-  document.getElementById("ms_avatar").textContent = initials(state.account || "MS");
-  document.getElementById("ph_name").textContent = state.phone || deviceName();
-  const ready = state.ready ? t("phone.ready_state") : t("phone.setup_state");
-  const mem = state.membership || "Microsoft Rewards";
-  document.getElementById("ms_meta").textContent = ready + " · " + mem + " · " + t("phone.by_microsoft");
-  document.getElementById("ph_meta").textContent = ready + " · " + mem + " · " + t("phone.by_phone");
+  renderAccountHeader();
   updateBingUi();
 }
 
@@ -381,13 +462,6 @@ function parseAr2(msg) {
 window.onBeaconRaw = function (msg) {
   const raw = String(msg || "");
   const parts = raw.split("|");
-  const tag = parts[0] || "";
-  const ver = Number(String(tag).replace(/^AR/i, ""));
-  if (tag.indexOf("AR") === 0 && isFinite(ver) && ver > 2) {
-    log("Este PC usa un beacon más nuevo (AR" + ver + "). Actualiza AutoRewarder Mobile.");
-    setPairStatus("Este PC es más nuevo. Actualiza AutoRewarder en el celular.");
-    return;
-  }
   if (parts[0] === "AR1" && parts.length >= 4) {
     const ip = parts[1];
     const port = parts[2];
@@ -414,16 +488,14 @@ function applyFound(found) {
     if (found.url !== state.base) {
       state.base = found.url;
       persist();
-      request("GET", "/me").then(function (me) {
-        if (me && me.ok) log("PC actualizado.");
-      }).catch(function () {});
+      request("GET", "/me").catch(function () {});
     }
     return;
   }
   if (found.code && found.code !== "-") {
-    setPairStatus("PC encontrado. Confirma el código y vincula.");
+    setPairStatus(t("phone.pc_found_confirm"));
   } else if (found.url) {
-    setPairStatus("PC encontrado. Escribe el código y pulsa Vincular.");
+    setPairStatus(t("phone.pc_found_enter"));
   }
   if (!state.token && found.url) forgetStaleOn(found.url);
 }
@@ -467,23 +539,25 @@ function setPairBusy(busy) {
 
 function scanQr() {
   if (state.scanningQr || state.pairing) {
-    setPairStatus(state.pairing ? "Ya se está vinculando…" : "La cámara ya está abierta.");
+    setPairStatus(state.pairing ? t("phone.already_pairing") : t("phone.camera_open"));
     return;
   }
-  setPairStatus("Abriendo la cámara…");
+  setPairStatus(t("camera_opening"));
   if (native() && native().scanQr) {
     state.scanningQr = true;
     setPairBusy(true);
     native().scanQr();
     return;
   }
-  setPairStatus("La cámara solo está en la app Android.");
+  setPairStatus(t("camera_android_only"));
 }
 
 window.onQrScanFailed = function (msg) {
   state.scanningQr = false;
   if (!state.pairing) setPairBusy(false);
-  setPairStatus(msg || "Cámara cerrada. Escribe el código o vuelve a escanear.");
+  if (msg === "camera_denied") setPairStatus(t("phone.camera_denied"));
+  else if (msg === "camera_closed" || !msg) setPairStatus(t("phone.camera_closed"));
+  else setPairStatus(msg);
 };
 
 window.onLanFound = function (url) {
@@ -505,12 +579,12 @@ window.onQrScanned = function (text) {
     return;
   }
   if (parsed && parsed.url) {
-    setPairStatus("QR leído. Vinculando…");
+    setPairStatus(t("phone.qr_scanned_linking"));
     doPair();
     return;
   }
   if (parsed && parsed.code) {
-    setPairStatus("Código leído. Buscando el PC…");
+    setPairStatus(t("phone.code_read_looking"));
     doPair();
     return;
   }
@@ -531,27 +605,27 @@ function waitForUrl(ms) {
 
 async function doPair() {
   if (state.pairing) {
-    setPairStatus("Ya se está vinculando…");
+    setPairStatus(t("phone.already_pairing"));
     return;
   }
   const code = String(document.getElementById("pair_code").value || "").replace(/\D/g, "");
   if (code.length !== 6) {
     setPairBusy(false);
-    setPairStatus("Pon el código de 6 dígitos del PC.");
+    setPairStatus(t("phone.enter_code"));
     return;
   }
   state.pairing = true;
   setPairBusy(true);
   try {
     if (!state.found || !state.found.url) {
-      setPairStatus("Buscando el PC…");
+      setPairStatus(t("phone_searching"));
       try { if (native() && native().discover) native().discover(); } catch (e) {}
       try { if (native() && native().scanLan) native().scanLan(); } catch (e) {}
       await waitForUrl(6000);
     }
     const found = state.found;
     if (!found || !found.url) {
-      setPairStatus("Aún no se ve el PC. AutoRewarder en el PC tiene que ser 4.3 o más (el 4.2 no tiene puente). En Wi‑Fi reintenta; en datos, escanea el QR.");
+      setPairStatus(t("phone.pc_not_seen"));
       return;
     }
     const urls = [];
@@ -562,7 +636,7 @@ async function doPair() {
     addUrl(found.url);
     addUrl(state.lan);
     addUrl(state.base);
-    setPairStatus("Vinculando…");
+    setPairStatus(t("phone_pairing"));
     let data = null;
     let used = "";
     for (let i = 0; i < urls.length; i++) {
@@ -583,10 +657,6 @@ async function doPair() {
         data = null;
         continue;
       }
-      if (data && !protocolOk(data)) {
-        setPairStatus("Este PC usa un protocolo más nuevo. Actualiza la app.");
-        return;
-      }
       if (data && data.ok && data.token) {
         used = base;
         break;
@@ -594,28 +664,17 @@ async function doPair() {
     }
     if (!data || !data.ok || !data.token) {
       const msg = (data && (data.message || data.error)) || "";
-      if (!data) {
-        setPairStatus("No hay puente en ese PC (¿versión 4.2?). Actualiza AutoRewarder a 4.3 o más.");
-      } else if (data.error === "no_microsoft_account") {
-        setPairStatus(data.message || "No hay cuenta Microsoft seleccionada en el PC.");
-      } else if (data.error === "rate_limit") {
-        setPairStatus("Demasiados intentos. Espera un minuto y usa el código nuevo del PC.");
-      } else if (data.error === "expired") {
-        setPairStatus(data.message || "Ese código ya caducó. En el PC abre Account → Vincular un celular otra vez.");
-      } else if (data.error === "protocol") {
-        setPairStatus(data.message || "Actualiza AutoRewarder en el PC.");
-      } else {
-        setPairStatus(msg || "Código no activo. En el PC: Account → Vincular un celular, y usa ese código.");
-      }
+      setPairStatus(msg || t("phone.pc_not_seen"));
       return;
     }
     state.token = data.token;
-    state.account = data.account;
-    state.membership = data.membership;
+    state.account = data.account || state.account;
+    state.membership = data.membership || state.membership;
     state.phone = data.phone || deviceName();
     state.ready = !!data.ready;
     state.base = data.public_url || data.url || used;
     state.lan = data.lan_url || (used.indexOf("192.") >= 0 || used.indexOf("10.") >= 0 ? used : state.lan);
+    syncPcConfig(data);
     persist();
     showMain();
     log("Linked to " + state.account);
@@ -623,7 +682,7 @@ async function doPair() {
     reportEvent("paired", true, "linked");
     ensureBingSetup(true);
   } catch (e) {
-    setPairStatus("No se alcanzó el PC. ¿AutoRewarder 4.3+ abierto en la misma red? El 4.2 no tiene puente. Escanea el QR si hace falta.");
+    setPairStatus(t("phone.pc_not_seen"));
   } finally {
     state.pairing = false;
     setPairBusy(false);
@@ -645,18 +704,14 @@ async function restore() {
   state.account = saved.account;
   state.membership = saved.membership;
   state.phone = saved.phone || deviceName();
+  state.ready = !!saved.ready;
   showMain();
   try { if (native() && native().discover) native().discover(); } catch (e) {}
   try {
     const me = await request("GET", "/me");
     if (me && me.error === "auth") throw new Error("auth");
     if (!me || !me.ok) throw new Error("unreachable");
-    state.account = me.account || state.account;
-    state.membership = me.membership || state.membership;
-    state.phone = me.phone || state.phone;
-    state.ready = me.ready;
-    if (me.ui_locale) applyUiLanguage(me.ui_locale);
-    if (me.market) applyMarket(me.market);
+    syncPcConfig(me);
     showAppVersion();
     persist();
     showMain();
@@ -664,18 +719,15 @@ async function restore() {
     ensureBingSetup(false);
   } catch (e) {
     if (isAuthError(e)) {
-      dropLink("El PC te desvinculó. Escanea el QR para volver a unir.");
+      dropLink(t("phone.unlinked_by_pc"));
       return;
     }
-    log("PC no reachable. Reintentando con la última URL…");
     const again = await reconnect(state.lan || state.base);
     if (again) return;
     const hint = document.getElementById("offline_hint");
     if (hint) {
       hint.hidden = false;
-      hint.textContent = typeof translate_runtime_text === "function"
-        ? translate_runtime_text("Sin conexión al PC. Abre AutoRewarder en el PC y, si hace falta, escanea el QR otra vez. No se desvincula al cerrar esta app.")
-        : "Sin conexión al PC. Abre AutoRewarder en el PC y, si hace falta, escanea el QR otra vez. No se desvincula al cerrar esta app.";
+      hint.textContent = t("phone.offline_banner");
     }
   }
 }
@@ -692,7 +744,8 @@ async function reconnect(hostOverride) {
   try {
     const me = await request("GET", "/me");
     if (me && me.ok) {
-      log("Reconectado.");
+      syncPcConfig(me);
+      log(t("phone.reconnected"));
       const recon = document.getElementById("reconnect_wrap");
       if (recon) recon.hidden = true;
       const hint = document.getElementById("offline_hint");
@@ -700,9 +753,7 @@ async function reconnect(hostOverride) {
       refreshOverview();
       return true;
     }
-    log("Ese enlace no aceptó este teléfono.");
   } catch (e) {
-    log("No se pudo reconectar.");
   } finally {
     reconnecting = false;
   }
@@ -718,14 +769,21 @@ async function refreshOverview() {
       applyPcButtons(state.pcRunning);
       return;
     }
+    syncPcConfig(data);
     const profile = data.profile || {};
     const progress = data.progress || {};
     const set = function (id, v) {
       const el = document.getElementById(id);
       if (el) el.textContent = v;
     };
-    set("rewards_level", profile.membership || state.membership || "Microsoft Rewards");
-    set("rewards_region", profile.country || "Colombia");
+    const memText = typeof translate_runtime_text === "function"
+      ? translate_runtime_text(profile.membership || state.membership || "Microsoft Rewards")
+      : (profile.membership || state.membership || "Microsoft Rewards");
+    const regText = typeof translate_runtime_text === "function"
+      ? translate_runtime_text(profile.country || "Colombia")
+      : (profile.country || "Colombia");
+    set("rewards_level", memText);
+    set("rewards_region", regText);
     const frac = function (obj, fallback) {
       if (obj && typeof obj === "object") return obj.label || fallback || "—";
       if (obj != null && obj !== "") return String(obj);
@@ -733,12 +791,12 @@ async function refreshOverview() {
     };
     set("progress_pc", t("phone.progress.pc") + ": " + frac(progress.pc));
     set("progress_mobile", t("phone.progress.mobile") + ": " + frac(progress.mobile));
-    set("progress_daily", t("phone.progress.daily") + ": " + frac(progress.daily));
-    set("progress_visual", t("phone.progress.visual") + ": " + frac(progress.visual));
+    set("progress_daily", t("phone.progress.daily") + ": " + (typeof translate_runtime_text === "function" ? translate_runtime_text(frac(progress.daily)) : frac(progress.daily)));
+    set("progress_visual", t("phone.progress.visual") + ": " + (typeof translate_runtime_text === "function" ? translate_runtime_text(frac(progress.visual)) : frac(progress.visual)));
     set("progress_checkin", t("phone.progress.checkin") + ": " + frac(progress.checkin));
     set("progress_news", t("phone.progress.news") + ": " + frac(progress.news));
     set("progress_edge", t("phone.progress.edge") + ": " + frac(progress.edge));
-    set("progress_reset", t("phone.progress.reset") + ": " + (progress.reset || "—"));
+    set("progress_reset", t("phone.progress.reset") + ": " + (typeof translate_runtime_text === "function" ? translate_runtime_text(progress.reset || "—") : (progress.reset || "—")));
     const st = document.getElementById("status_text");
     const dot = document.getElementById("dot");
     if (st) st.textContent = data.running ? t("phone.pc_running") : t("phone.linked_ready");
@@ -753,11 +811,6 @@ async function refreshOverview() {
     const derived = data.stats || {};
     set("stat_total", derived.is_estimate ? "—" : (derived.total_points == null ? "—" : Number(derived.total_points).toLocaleString()));
     set("stat_today", derived.today_is_estimate ? "—" : (derived.today_points == null ? "—" : Number(derived.today_points).toLocaleString()));
-    const q = data.queries || {};
-    const pcEl = document.getElementById("count_pc");
-    const mobEl = document.getElementById("count_mobile");
-    if (pcEl && q.pc != null && document.activeElement !== pcEl) pcEl.value = q.pc;
-    if (mobEl && q.mobile != null && document.activeElement !== mobEl) mobEl.value = q.mobile;
     const block = data.block;
     const br = document.getElementById("run_block_reason");
     if (br) {
@@ -789,9 +842,7 @@ async function saveQueries() {
     if (pcEl) pcEl.value = pc;
     if (mobEl) mobEl.value = mobile;
     log(t("phone.searches_saved").replace("{pc}", pc).replace("{mobile}", mobile));
-  } catch (e) {
-    log("No se guardaron las búsquedas en el PC.");
-  }
+  } catch (e) {}
 }
 
 async function pollJobs() {
@@ -799,6 +850,7 @@ async function pollJobs() {
   jobsInFlight = true;
   try {
     const data = await request("GET", "/jobs");
+    if (data) syncPcConfig(data);
     const jobs = (data && data.jobs) || [];
     for (let i = 0; i < jobs.length; i++) handleJob(jobs[i]);
   } catch (e) {} finally {
@@ -810,12 +862,8 @@ function handleJob(job) {
   if (!job || typeof job !== "object") return;
   const id = String(job.id || "").trim();
   const kind = String(job.kind || "");
-  if (!id) {
-    log("PC job ignorado (sin id)");
-    return;
-  }
+  if (!id) return;
   if (!PHONE_JOB_KINDS[kind]) {
-    log("PC job ignorado (kind desconocido): " + kind);
     request("POST", "/jobs/" + encodeURIComponent(id) + "/done", { ok: false, detail: "unknown_job" }).catch(function () {});
     return;
   }
@@ -827,12 +875,12 @@ function handleJob(job) {
     banner.hidden = false;
     banner.textContent = t("phone.pc_job").replace("{kind}", kind);
   }
-  runPhone(kind);
+  runPhone(kind, true);
 }
 
 function detailDeniesSuccess(detail) {
   const text = String(detail || "").toLowerCase();
-  const blocked = ["not verified", "ask:", "opened", "no se pudo", "timeout", "abiertas"];
+  const blocked = ["not verified", "ask:", "opened", "no se pudo", "timeout", "abiertas", "closed"];
   for (let i = 0; i < blocked.length; i++) {
     if (text.indexOf(blocked[i]) >= 0) return true;
   }
@@ -840,7 +888,7 @@ function detailDeniesSuccess(detail) {
 }
 
 function detailHasTaskCounter(detail) {
-  const m = String(detail || "").match(/(?:check-in|noticias)\s+(\d+)\s*\/\s*(\d+)/i);
+  const m = String(detail || "").match(/(?:check-in|noticias|news)\s+(\d+)\s*\/\s*(\d+)/i);
   if (!m) return false;
   const done = Number(m[1]);
   const max = Number(m[2]);
@@ -867,7 +915,7 @@ async function finishPending(ok, detail) {
     banner.hidden = true;
     banner.textContent = "";
   }
-  log(ok ? (detail || "Listo") : (detail || "No terminó"));
+  log(ok ? (detail || t("ready")) : (detail || t("status.pending")));
 }
 
 function applyPcButtons(running) {
@@ -893,14 +941,10 @@ async function runPc(mode) {
     if (data && data.ok) log("PC: " + mode);
     else {
       const msg = (data && data.message) || (data && data.error) || "blocked";
-      if (data && data.kind === "microsoft") {
-        log("No se puede iniciar: " + msg + " (cuenta Microsoft en el PC, no el celular).");
-      } else {
-        log("No se puede iniciar: " + msg);
-      }
+      log(msg);
     }
   } catch (e) {
-    log("No se alcanzó el PC (" + (e.message || e) + ")");
+    log(t("phone.offline_banner"));
   } finally {
     state.pcBusy = false;
     refreshOverview();
@@ -915,14 +959,10 @@ async function stopPc() {
   try {
     const data = await request("POST", "/pc/stop", { manual: true });
     if (data && (data.ok || data.stopped)) {
-      log("PC stop enviado.");
       const st = document.getElementById("status_text");
       if (st) st.textContent = t("phone.stop");
-    } else {
-      log("Stop falló: " + JSON.stringify(data));
     }
   } catch (e) {
-    log("Stop no llegó al PC: " + (e.message || e));
   } finally {
     state.pcBusy = false;
     refreshOverview();
@@ -960,7 +1000,6 @@ function setBingBanner(msg, warn) {
 
 function updateBingUi() {
   const st = bingPackageState();
-  const installed = st === "installed";
   const pill = document.getElementById("bing_pill");
   const loginBtn = document.getElementById("bing_login_btn");
   const setup = document.getElementById("bing_setup_actions");
@@ -972,7 +1011,6 @@ function updateBingUi() {
     pill.classList.toggle("ready", !!state.bingReady);
     if (state.bingReady) pill.textContent = t("bing.ready");
     else if (st === "disabled") pill.textContent = t("bing.disabled");
-    else if (!installed) pill.textContent = t("bing.nosession");
     else pill.textContent = t("bing.nosession");
   }
   const showLogin = !state.bingReady;
@@ -985,7 +1023,7 @@ function updateBingUi() {
     if (el) el.disabled = !state.bingReady || busy;
   });
   if (state.waitingBingLogin) {
-    setBingBanner("Inicia sesión con la cuenta Microsoft. La sesión queda en esta app.", true);
+    setBingBanner(t("bing.install_banner"), true);
   } else if (state.probingSession || state.verifying) {
     // Keep active status banner
   } else if (state.askingVerify) {
@@ -1002,31 +1040,13 @@ function ensureBingSetup(justPaired) {
   probeBingSession(justPaired ? "paired" : "status");
 }
 
-function installBingApp() {
-  log("Abriendo Play Store para instalar Bing…");
-  state.waitingBingInstall = true;
-  let ok = true;
-  try {
-    if (native() && native().installBing) ok = native().installBing() !== false;
-  } catch (e) {
-    ok = false;
-  }
-  if (!ok) {
-    state.waitingBingInstall = false;
-    log("No se pudo abrir Play Store.");
-    setBingBanner("No se pudo abrir Play Store.", true);
-    return;
-  }
-  setBingBanner("Instala Bing y vuelve a AutoRewarder. La UI se actualiza sola.", true);
-}
-
 function confirmBingReady() {
   if (state.pendingVerify) {
     verifyPending();
     return;
   }
-  log("Comprobando la sesión de Rewards…");
-  setBingBanner("Comprobando la sesión de Rewards…", false);
+  log(t("phone.checking_session"));
+  setBingBanner(t("phone.checking_session"), false);
   probeBingSession("manual");
 }
 
@@ -1040,7 +1060,7 @@ function applyMarket(market) {
 function showAppVersion() {
   const el = document.getElementById("app_version");
   if (!el) return;
-  let ver = "4.4.4";
+  let ver = "4.4.5";
   try {
     const n = native();
     if (n && n.appVersionName) ver = String(n.appVersionName() || ver);
@@ -1051,9 +1071,7 @@ function showAppVersion() {
 function askPending(kind) {
   state.askingVerify = true;
   state.pendingVerify = kind || state.pendingVerify;
-  const label = state.pendingVerify === "news" ? "las noticias" : "el check-in";
-  setBingBanner("No pude leer el contador. Si ya completaste " + label + " en Bing, pulsa Comprobar sesión.", true);
-  log("No se marca done hasta leer getuserinfo.");
+  setBingBanner(t("phone.checking_session"), true);
   updateBingUi();
 }
 
@@ -1063,7 +1081,7 @@ function verifyPending() {
   state.askingVerify = false;
   state.verifying = true;
   updateBingUi();
-  setBingBanner("Verificando en Rewards…", true);
+  setBingBanner(t("phone.verifying_rewards"), true);
   try {
     if (native() && native().runTask) {
       native().runTask(kind);
@@ -1114,14 +1132,13 @@ function deliverProbe(loggedIn, purpose) {
     const kind = pending ? pending.kind : (state.pendingVerify || "task");
     const detail = pending ? pending.detail : "no se pudo";
     if (!loggedIn || !pending || !reportedTaskOk(true, detail)) {
-      log("Sin sesión de Rewards. No se marca la tarea.");
       state.bingReady = !!loggedIn;
-      state.pendingVerify = kind;
-      state.askingVerify = true;
+      state.pendingVerify = null;
+      state.askingVerify = false;
       state.verifying = false;
       state.autoQueue = [];
       updateBingUi();
-      setBingBanner("Bing: sin sesión", true);
+      setBingBanner(t("bing.nosession"), true);
       return;
     }
     state.pendingVerify = null;
@@ -1138,16 +1155,14 @@ function deliverProbe(loggedIn, purpose) {
   if (purpose === "thenVerify") {
     const kind = state.probeKind || state.pendingVerify;
     if (!loggedIn) {
-      log("Sin sesión de Rewards. No se marca la tarea.");
-      state.pendingVerify = kind;
-      state.askingVerify = true;
+      state.pendingVerify = null;
+      state.askingVerify = false;
       state.verifying = false;
       updateBingUi();
-      setBingBanner("Bing: sin sesión", true);
+      setBingBanner(t("bing.nosession"), true);
       return;
     }
-    log("Sesión vista. Verificando " + (kind === "news" ? "noticias" : "check-in") + "…");
-    setBingBanner("Verificando en Rewards…", true);
+    setBingBanner(t("phone.verifying_rewards"), true);
     state.verifying = true;
     updateBingUi();
     let started = false;
@@ -1165,23 +1180,22 @@ function deliverProbe(loggedIn, purpose) {
   }
   if (loggedIn) {
     if (!wasReady || purpose === "manual") {
-      log("Sesión de Rewards lista en esta app.");
+      log(t("phone.session_ready_log"));
     }
     setBingBanner("");
     if (state.pendingBingKind) {
       const kind = state.pendingBingKind;
       state.pendingBingKind = null;
-      runPhone(kind);
+      runPhone(kind, true);
     }
     return;
   }
   if (purpose === "manual") {
-    log("No se detectó sesión activa. Pulsa Iniciar sesión en Rewards.");
+    log(t("phone.session_missing_log"));
     setBingBanner(t("bing.nosession"), true);
     return;
   }
   if (purpose === "paired" && !state.waitingBingLogin) {
-    log("Inicia sesión en Rewards en esta app.");
     loginBingApp();
   }
 }
@@ -1197,7 +1211,7 @@ window.onBingSession = function (loggedIn) {
 };
 
 function loginBingApp() {
-  log("Abriendo el inicio de sesión de Rewards…");
+  log(t("phone.opening_login"));
   state.probingSession = false;
   state.probePurpose = "";
   state.waitingBingLogin = true;
@@ -1211,42 +1225,32 @@ function loginBingApp() {
   }
   if (!ok) {
     state.waitingBingLogin = false;
-    log("No se pudo abrir el inicio de sesión.");
-    setBingBanner("No se pudo abrir el inicio de sesión.", true);
     updateBingUi();
   }
 }
 
 function runAllPhoneTasks() {
-  if (state.pendingVerify || state.verifying) {
-    log("Ya hay una tarea de Bing abierta.");
-    return;
-  }
+  if (state.pendingVerify || state.verifying) return;
   state.autoQueue = ["news"];
   runPhone("checkin", true);
 }
 
 function runPhone(kind, forceAutomated) {
-  if (state.pendingVerify) {
-    log("Ya hay una tarea de Bing abierta.");
-    return;
-  }
+  if (state.pendingVerify) return;
   updateBingUi();
   if (!state.bingReady) {
     state.pendingBingKind = kind;
-    log("Hace falta la sesión de Rewards en esta app.");
     if (!state.waitingBingLogin) loginBingApp();
     return;
   }
   if (state.market) applyMarket(state.market);
-  const label = kind === "news" ? "noticias" : "check-in";
+  const label = kind === "news" ? t("phone.news") : t("phone.checkin");
   state.askingVerify = false;
   state.pendingVerify = kind;
   updateBingUi();
-  // Prefer built-in automated WebView task when requested or when external Bing is absent
   if (forceAutomated || !bingInstalled()) {
-    log("Automatizando " + label + "…");
-    setBingBanner("Ejecutando " + label + " en Rewards…", false);
+    log(tf("phone.executing_task", { task: label }));
+    setBingBanner(tf("phone.executing_task", { task: label }), false);
     state.verifying = true;
     updateBingUi();
     if (native() && native().runTask) {
@@ -1259,8 +1263,8 @@ function runPhone(kind, forceAutomated) {
     if (native() && native().openBingApp) opened = !!native().openBingApp(kind);
   } catch (e) {}
   if (opened) {
-    log("Abriendo " + label + " en Bing…");
-    setBingBanner("Completa " + label + " en Bing. Al volver se lee el contador de Rewards.", true);
+    log(tf("phone.executing_task", { task: label }));
+    setBingBanner(tf("phone.executing_task", { task: label }), false);
   } else {
     state.verifying = true;
     updateBingUi();
@@ -1273,12 +1277,19 @@ window.onBingTask = function (ok, detail) {
   const kind = state.pendingVerify || "task";
   const text = String(detail || "");
   state.verifying = false;
+  if (text === "closed") {
+    state.pendingVerify = null;
+    state.askingVerify = false;
+    state.autoQueue = [];
+    updateBingUi();
+    return;
+  }
   if (text.indexOf("ask:") === 0) {
     state.autoQueue = [];
     askPending(kind);
     return;
   }
-  const msg = text || (ok ? "Listo" : "no se pudo");
+  const msg = text || (ok ? t("ready") : "no se pudo");
   const reported = reportedTaskOk(ok, msg);
   if (!reported) {
     state.pendingVerify = null;
@@ -1293,7 +1304,7 @@ window.onBingTask = function (ok, detail) {
     return;
   }
   state.pendingSuccess = { kind: kind, detail: msg };
-  setBingBanner("Comprobando la sesión de Rewards…", true);
+  setBingBanner(t("phone.checking_session"), false);
   probeBingSession("success");
 };
 
@@ -1324,15 +1335,13 @@ window.onAppResume = function () {
   if (state.waitingBingInstall && st === "installed") {
     state.waitingBingInstall = false;
     state.bingReady = false;
-    log("Bing instalada. Ahora inicia sesión.");
     loginBingApp();
   } else if (state.waitingBingLogin || state.verifying || state.pendingSuccess) {
     updateBingUi();
   } else if (state.pendingVerify && !state.askingVerify) {
     const kind = state.pendingVerify;
     state.probeKind = kind;
-    log("Volviste de Bing. Comprobando la sesión de Rewards…");
-    setBingBanner("Comprobando la sesión de Rewards…", true);
+    setBingBanner(t("phone.checking_session"), false);
     probeBingSession("thenVerify");
   } else if (!state.bingReady) {
     probeBingSession("status");
@@ -1345,69 +1354,66 @@ async function heartbeat() {
   heartbeatInFlight = true;
   try { if (native() && native().keepDiscovering) native().keepDiscovering(); } catch (e) {}
   try {
-    await request("GET", "/me");
+    const me = await request("GET", "/me");
+    if (me) syncPcConfig(me);
     const hint = document.getElementById("offline_hint");
     if (hint) hint.hidden = true;
   } catch (e) {
     if (isAuthError(e)) {
-      dropLink("El PC te desvinculó. Escanea el QR para volver a unir.");
+      dropLink(t("phone.unlinked_by_pc"));
       return;
     }
     const hint = document.getElementById("offline_hint");
     if (hint) {
       hint.hidden = false;
-      hint.textContent = typeof translate_runtime_text === "function"
-        ? translate_runtime_text("Sin conexión al PC. Reintentando sin bloquear la aplicación…")
-        : "Sin conexión al PC. Reintentando sin bloquear la aplicación…";
+      hint.textContent = t("phone.offline_banner");
     }
   } finally {
     heartbeatInFlight = false;
   }
 }
 
+/**
+ * Unlink this phone immediately. Attempts to notify the PC first with a short
+ * timeout, then always clears local pairing and returns to the link screen.
+ */
 async function unlinkPhone() {
   const btn = document.getElementById("unlink_btn") || document.querySelector("button.phone-mini");
-  if (btn) {
-    if (btn.disabled) return;
-    btn.disabled = true;
-  }
+  if (btn) btn.disabled = true;
   try {
-    const data = await request("POST", "/phone/unlink", {});
-    if (!data || !data.ok) {
-      log("No se pudo desvincular en el PC. Inténtalo de nuevo.");
-      return;
+    if (state.token) {
+      await request("POST", "/phone/unlink", {}, 2500);
     }
-    dropLink("Desvinculado. Escanea el QR para volver a unir.");
   } catch (e) {
-    if (isAuthError(e)) {
-      dropLink("El PC te desvinculó. Escanea el QR para volver a unir.");
-      return;
-    }
-    log("No se pudo desvincular: " + (e.message || e));
+    // Even if the PC is offline or unreachable, always unlink locally.
   } finally {
-    if (btn && state.token) btn.disabled = false;
+    dropLink(t("phone.unlinked_msg"));
+    if (btn) btn.disabled = false;
   }
 }
 
-function setUpdateBanner(msg, warn) {
+function setUpdateBanner(msg, warn, showProgress, pct) {
   const el = document.getElementById("update_banner");
   const text = document.getElementById("update_text");
+  const cancelBtn = document.getElementById("update_cancel_btn");
+  const progWrap = document.getElementById("update_progress_wrap");
+  const progBar = document.getElementById("update_progress_bar");
   if (!el) return;
   if (!msg) {
     el.hidden = true;
     if (text) text.textContent = "";
+    if (cancelBtn) cancelBtn.hidden = true;
+    if (progWrap) progWrap.hidden = true;
     return;
   }
   el.hidden = false;
   const translated = typeof translate_runtime_text === "function" ? translate_runtime_text(msg) : msg;
   if (text) text.textContent = translated;
-  else el.textContent = translated;
   el.classList.toggle("warn", !!warn);
-  const download = document.getElementById("update_download_btn");
-  const canDownload = !!(state.pendingPhoneUpdate && state.pendingPhoneUpdate.download_url);
-  if (download) {
-    download.hidden = !canDownload;
-    download.disabled = !canDownload;
+  if (cancelBtn) cancelBtn.hidden = !state.phoneUpdateDownloading;
+  if (progWrap) progWrap.hidden = !showProgress;
+  if (progBar && typeof pct === "number" && pct >= 0) {
+    progBar.style.width = Math.min(100, Math.max(2, pct)) + "%";
   }
 }
 
@@ -1421,21 +1427,31 @@ function cancelPhoneUpdate() {
   setUpdateBanner("");
 }
 
-function downloadPhoneUpdate() {
-  const update = state.pendingPhoneUpdate;
+function startAutomaticPhoneUpdate(update) {
   if (!update || !update.download_url || state.phoneUpdateDownloading) return;
+  state.pendingPhoneUpdate = update;
   state.phoneUpdateDownloading = true;
-  setUpdateBanner(t("updates.phone_down"));
-  const download = document.getElementById("update_download_btn");
-  if (download) download.disabled = true;
+  const tag = update.tag || "";
+  setUpdateBanner(tf("updates.downloading_pct", { tag: tag, pct: 0 }), false, true, 2);
   const n = native();
   if (n && n.downloadUpdate) {
     n.downloadUpdate(update.download_url, update.digest || "");
   } else {
     state.phoneUpdateDownloading = false;
-    setUpdateBanner("Esta versión no puede descargar el APK automáticamente.", true);
+    setUpdateBanner(t("updates.github"), true, false, 0);
   }
 }
+
+window.onUpdateProgress = function (pct) {
+  if (!state.phoneUpdateDownloading) return;
+  const tag = (state.pendingPhoneUpdate && state.pendingPhoneUpdate.tag) || "";
+  const num = Number(pct || 0);
+  if (num >= 100) {
+    setUpdateBanner(t("updates.installing_apk"), false, true, 100);
+  } else {
+    setUpdateBanner(tf("updates.downloading_pct", { tag: tag, pct: num }), false, true, num);
+  }
+};
 
 function _phoneVersion(value) {
   const nums = String(value || "").match(/\d+/g) || [];
@@ -1520,11 +1536,11 @@ async function checkPhoneUpdate(manual) {
   if (manual && button) {
     button.disabled = true;
     button.textContent = t("updates.checking");
-    setUpdateBanner(t("updates.checking"));
+    setUpdateBanner(t("updates.checking"), false, false, 0);
   }
   const n = native();
   try {
-    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.4") : "4.4.4";
+    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.5") : "4.4.5";
     const mineCode = n && n.appVersionCode ? Number(n.appVersionCode() || 0) : 0;
     const newerThanMine = function (update) {
       if (!update) return false;
@@ -1539,34 +1555,28 @@ async function checkPhoneUpdate(manual) {
     const ghUpdate = results[0];
     const pcUpdate = results[1];
     let candidate = null;
-    if (ghUpdate && ghUpdate.tag && newerThanMine(ghUpdate)) {
+    if (ghUpdate && ghUpdate.tag && newerThanMine(ghUpdate) && ghUpdate.download_url) {
       candidate = ghUpdate;
-    } else if (pcUpdate && pcUpdate.tag && newerThanMine(pcUpdate)) {
+    } else if (pcUpdate && pcUpdate.tag && newerThanMine(pcUpdate) && pcUpdate.download_url) {
       candidate = pcUpdate;
     }
     const customFailed = !!(ghUpdate && ghUpdate.error) && !pcUpdate;
     if (candidate) {
-      state.pendingPhoneUpdate = candidate;
-      if (candidate.download_url) {
-        setUpdateBanner(tf("updates.phone_ask", { tag: candidate.tag }));
-      } else {
-        state.pendingPhoneUpdate = null;
-        setUpdateBanner(tf("updates.no_installer", { tag: candidate.tag }), true);
-      }
+      startAutomaticPhoneUpdate(candidate);
     } else if (manual) {
       state.pendingPhoneUpdate = null;
       if (customFailed) {
-        setUpdateBanner(t("updates.github"), true);
+        setUpdateBanner(t("updates.github"), true, false, 0);
       } else {
-        setUpdateBanner(t("updates.phone_none"));
-        setTimeout(function () { if (!state.pendingPhoneUpdate) setUpdateBanner(""); }, 4000);
+        setUpdateBanner(t("updates.phone_none"), false, false, 0);
+        setTimeout(function () { if (!state.phoneUpdateDownloading) setUpdateBanner(""); }, 3500);
       }
     } else {
       state.pendingPhoneUpdate = null;
       setUpdateBanner("");
     }
   } catch (e) {
-    if (manual) setUpdateBanner(t("updates.github"), true);
+    if (manual) setUpdateBanner(t("updates.github"), true, false, 0);
     else {
       state.pendingPhoneUpdate = null;
       setUpdateBanner("");
@@ -1588,12 +1598,14 @@ window.onNativeReady = function () {
 window.onUpdateReady = function () {
   state.phoneUpdateDownloading = false;
   state.pendingPhoneUpdate = null;
-  setUpdateBanner("Instala la actualización. La sesión se conserva.");
+  setUpdateBanner("");
 };
 
 window.onUpdateFailed = function (msg) {
   state.phoneUpdateDownloading = false;
-  setUpdateBanner(msg || "No se pudo actualizar.", true);
+  state.pendingPhoneUpdate = null;
+  setUpdateBanner(msg || t("updates.github"), true, false, 0);
+  setTimeout(function () { if (!state.phoneUpdateDownloading) setUpdateBanner(""); }, 5000);
 };
 
 initLanguage();
@@ -1603,4 +1615,4 @@ restore();
 setInterval(pollJobs, 5000);
 setInterval(refreshOverview, 30000);
 setInterval(heartbeat, 30000);
-setTimeout(function () { if (state.token) checkPhoneUpdate(false); }, 30000);
+setTimeout(function () { checkPhoneUpdate(false); }, 15000);

@@ -176,6 +176,7 @@ class PhoneBridge:
             "qr": qr,
             "apk_download_url": apk_url,
             "apk_qr": apk_qr,
+            "ui_locale": getattr(self.api, "ui_locale", lambda: "en")(),
             "phones": public,
         }
 
@@ -521,6 +522,14 @@ class PhoneBridge:
                     bridge._touch(phone)
                     acc = bridge._account()
                     prof = bridge._profile()
+                    try:
+                        gs = bridge.api.global_settings.get_settings()
+                        queries = {
+                            "pc": int(gs.get("queries_pc") or 15),
+                            "mobile": int(gs.get("queries_mobile") or 15),
+                        }
+                    except Exception:
+                        queries = {"pc": 15, "mobile": 15}
                     return self._json(
                         200,
                         {
@@ -529,6 +538,8 @@ class PhoneBridge:
                             "membership": prof.get("membership") or "Microsoft Rewards",
                             "phone": phone.get("name") or "Phone",
                             "ready": bool(acc.get("first_setup_done")),
+                            "market": prof.get("locale") or "es-CO",
+                            "queries": queries,
                             "version": CURRENT_VERSION,
                             "ui_locale": getattr(
                                 bridge.api, "ui_locale", lambda: "en"
@@ -539,6 +550,16 @@ class PhoneBridge:
                     if not phone:
                         return self._json(401, {"ok": False, "error": "auth"})
                     bridge._touch(phone)
+                    acc = bridge._account()
+                    prof = bridge._profile()
+                    try:
+                        gs = bridge.api.global_settings.get_settings()
+                        queries = {
+                            "pc": int(gs.get("queries_pc") or 15),
+                            "mobile": int(gs.get("queries_mobile") or 15),
+                        }
+                    except Exception:
+                        queries = {"pc": 15, "mobile": 15}
                     pending = []
                     with bridge._lock:
                         for job in bridge._jobs.values():
@@ -551,17 +572,38 @@ class PhoneBridge:
                                         "detail": job.get("detail") or "",
                                     }
                                 )
-                    return self._json(200, {"ok": True, "jobs": pending})
+                    return self._json(
+                        200,
+                        {
+                            "ok": True,
+                            "jobs": pending,
+                            "ui_locale": getattr(
+                                bridge.api, "ui_locale", lambda: "en"
+                            )(),
+                            "account": acc.get("label") or "Account",
+                            "membership": prof.get("membership") or "Microsoft Rewards",
+                            "ready": bool(acc.get("first_setup_done")),
+                            "market": prof.get("locale") or "es-CO",
+                            "queries": queries,
+                        },
+                    )
                 if path == "/overview":
                     if not phone:
                         return self._json(401, {"ok": False, "error": "auth"})
                     bridge._touch(phone)
+                    acc = bridge._account()
+                    prof = bridge._profile()
                     try:
                         data = bridge.api.get_rewards_overview() or {}
                     except Exception:
                         data = {}
                     data["ok"] = True
                     data["running"] = bool(bridge.api.is_running())
+                    data["ui_locale"] = getattr(bridge.api, "ui_locale", lambda: "en")()
+                    data["account"] = acc.get("label") or "Account"
+                    data["membership"] = prof.get("membership") or "Microsoft Rewards"
+                    data["ready"] = bool(acc.get("first_setup_done"))
+                    data["market"] = prof.get("locale") or "es-CO"
                     try:
                         stats = bridge.api.get_stats() or {}
                         data["stats"] = stats.get("derived") or {}
@@ -684,11 +726,23 @@ class PhoneBridge:
                     acc = bridge._account()
                     prof = bridge._profile()
                     info = bridge.info()
+                    try:
+                        gs = bridge.api.global_settings.get_settings()
+                        queries = {
+                            "pc": int(gs.get("queries_pc") or 15),
+                            "mobile": int(gs.get("queries_mobile") or 15),
+                        }
+                    except Exception:
+                        queries = {"pc": 15, "mobile": 15}
                     payload = {
                         "ok": True,
                         "token": phone["token"],
                         "account": acc.get("label") or "Account",
                         "membership": prof.get("membership") or "Microsoft Rewards",
+                        "ready": bool(acc.get("first_setup_done")),
+                        "market": prof.get("locale") or "es-CO",
+                        "ui_locale": getattr(bridge.api, "ui_locale", lambda: "en")(),
+                        "queries": queries,
                         "phone": phone["name"],
                         "url": info.get("url"),
                         "lan_url": info.get("lan_url"),

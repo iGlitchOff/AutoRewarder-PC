@@ -201,15 +201,32 @@
     }
     .update-panel {
       display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+    .update-panel-top {
+      display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      flex-wrap: wrap;
     }
-    .update-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
+    .update-progress-track {
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--surface-3);
+      overflow: hidden;
+    }
+    .update-progress-track[hidden] {
+      display: none !important;
+    }
+    .update-progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--accent);
+      transition: width 0.18s ease;
     }
     .card {
       padding: 15px 16px;
@@ -416,18 +433,20 @@
         </div>
         <div class="brand-text">
           <h1 data-i18n="phone.brand">AutoRewarder</h1>
-          <span class="brand-sub" id="app_version">Microsoft Rewards · 4.4.4</span>
+          <span class="brand-sub" id="app_version">Microsoft Rewards · 4.4.5</span>
         </div>
       </div>
       <button id="updates_btn" class="updates-btn" type="button" onclick="checkPhoneUpdate(true)" data-i18n="phone.updates" data-i18n-title="phone.updates">Check updates</button>
     </header>
 
     <div class="bing-banner update-panel" id="update_banner" hidden>
-      <span id="update_text"></span>
-      <span class="update-actions">
-        <button id="update_download_btn" class="btn-secondary" type="button" onclick="downloadPhoneUpdate()" data-i18n="phone.download" hidden>Download</button>
-        <button class="btn-secondary" type="button" onclick="cancelPhoneUpdate()" data-i18n="phone.cancel">Cancel</button>
-      </span>
+      <div class="update-panel-top">
+        <span id="update_text"></span>
+        <button id="update_cancel_btn" class="btn-secondary" type="button" onclick="cancelPhoneUpdate()" data-i18n="phone.cancel" hidden>Cancel</button>
+      </div>
+      <div class="update-progress-track" id="update_progress_wrap" hidden>
+        <div class="update-progress-bar" id="update_progress_bar"></div>
+      </div>
     </div>
 
     <section class="card pair-screen" id="pair_screen">
