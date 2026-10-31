@@ -857,18 +857,19 @@ function render_account_trigger() {
   }
 }
 
-async function delete_current_account() {
+async function delete_current_account(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
   const current = accountsCache.find(a => a.id === currentAccountId);
   if (!current) return;
   const confirmed = await confirm_modal(
-    `¿Quieres borrar "${current.label}"?`,
-    'Deberás volver a vincular esta cuenta para usarla otra vez. Se eliminarán su perfil, historial y estado de tareas.',
-    { confirmLabel: 'Borrar cuenta', danger: true }
+    tf('account.delete_question', { name: current.label }),
+    t('account.delete_msg'),
+    { confirmLabel: t('account.delete'), danger: true }
   );
   if (!confirmed) return;
   const deleted = await pywebview.api.delete_account(current.id);
   if (!deleted) {
-    show_toast('No se pudo borrar la cuenta. Detén la ejecución e inténtalo de nuevo.', 'warning');
+    show_toast(t('account_delete_error'), 'warning');
     return;
   }
   show_toast(tf('account_deleted', { name: current.label }), 'success');
@@ -1500,6 +1501,7 @@ function refresh_account_ui() {
     }
 
     render_account_trigger();
+    render_account_menu();
 
     // Empty state overlay.
     const emptyState = document.getElementById('empty_state');
@@ -1610,6 +1612,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
   const deleteAccountBtn = document.getElementById('deleteAccountBtn');
   if (deleteAccountBtn) deleteAccountBtn.addEventListener('click', delete_current_account);
+
+  const accountTrigger = document.getElementById('account_trigger');
+  if (accountTrigger) {
+    accountTrigger.addEventListener('click', (e) => {
+      if (e.target.closest('#deleteAccountBtn')) return;
+      toggle_account_menu();
+    });
+    accountTrigger.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        if (e.target.closest('#deleteAccountBtn')) return;
+        e.preventDefault();
+        toggle_account_menu();
+      }
+    });
+  }
+  document.addEventListener('click', (e) => {
+    const picker = document.getElementById('account_picker');
+    if (picker && !picker.contains(e.target)) {
+      toggle_account_menu(false);
+    }
+  });
 
   // Header "manage accounts" button.
   const manageBtn = document.getElementById('manageBtn');
@@ -1950,7 +1973,7 @@ function render_phone_device(info) {
   const membership = translate_runtime_text((info && info.membership) || 'Microsoft Rewards');
   const region = translate_runtime_text((info && info.region) || '');
   const ready = info && info.account && info.account.first_setup_done;
-  const readyLabel = ready ? t('phone.ready') : t('phone.setup_pending');
+  const readyLabel = ready ? t('phone.ready_state') : t('phone.setup_state');
   const suffix = region ? ` · ${membership} · ${region} · ${t('phone.by_phone')}` : ` · ${membership} · ${t('phone.by_phone')}`;
 
   if (!phones.length) {
@@ -1966,7 +1989,9 @@ function render_phone_device(info) {
   } else {
     phones.forEach(function (phone) {
       const row = document.createElement('div');
-      row.className = 'phone-row';
+      row.className = 'phone-row is-linked';
+      const top = document.createElement('div');
+      top.className = 'phone-row-top';
       const avatar = document.createElement('span');
       avatar.className = 'avatar phone-ico';
       avatar.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"></rect><line x1="11" y1="18" x2="13" y2="18"></line></svg>';
@@ -1983,12 +2008,40 @@ function render_phone_device(info) {
       const dot = document.createElement('span');
       dot.className = 'phone-dot' + (phone.online ? ' on' : '');
       dot.title = phone.online ? t('phone.online') : t('phone.offline');
+      const unlink = document.createElement('button');
+      unlink.type = 'button';
+      unlink.className = 'phone-mini danger-subtle';
+      unlink.textContent = t('unlink');
+      unlink.addEventListener('click', function () {
+        unlink.disabled = true;
+        pywebview.api.unlink_phone(phone.id).then(function (info) {
+          if (!info || info.phone_unlinked !== true) {
+            show_toast(t('phone_already_unlinked'), 'warning');
+            unlink.disabled = false;
+            refresh_account_ui();
+            return;
+          }
+          show_toast(t('phone_unlinked'), 'info');
+          refresh_phone_ui();
+          refresh_account_ui();
+        }).catch(function (err) {
+          console.error('unlink_phone failed:', err);
+          show_toast(t('phone_unlink_failed'), 'error');
+          unlink.disabled = false;
+          refresh_account_ui();
+        });
+      });
+      top.appendChild(avatar);
+      top.appendChild(infoEl);
+      top.appendChild(dot);
+      top.appendChild(unlink);
+
       const actions = document.createElement('div');
       actions.className = 'phone-row-actions';
       const runAll = document.createElement('button');
       runAll.type = 'button';
-      runAll.className = 'phone-mini';
-      runAll.textContent = t('phone.run_all');
+      runAll.className = 'phone-mini primary-subtle';
+      runAll.textContent = t('phone.run_all_short');
       runAll.title = t('phone.run_all');
       runAll.addEventListener('click', function () {
         pywebview.api.send_phone_job('all').then(function (r) {
@@ -2028,40 +2081,12 @@ function render_phone_device(info) {
           else show_toast(t('news_sent'), 'success');
         });
       });
-      const unlink = document.createElement('button');
-      unlink.type = 'button';
-      unlink.className = 'phone-mini';
-      unlink.textContent = t('unlink');
-      unlink.addEventListener('click', function () {
-        unlink.disabled = true;
-        pywebview.api.unlink_phone(phone.id).then(function (info) {
-          if (!info || info.phone_unlinked !== true) {
-            show_toast(t('phone_already_unlinked'), 'warning');
-            unlink.disabled = false;
-            refresh_account_ui();
-            return;
-          }
-          show_toast(t('phone_unlinked'), 'info');
-          refresh_phone_ui();
-          // Re-read accounts and Start/Tasks eligibility after the phone-only
-          // mutation.  The phone must never determine whether a Microsoft
-          // account exists or whether PC work can start.
-          refresh_account_ui();
-        }).catch(function (err) {
-          console.error('unlink_phone failed:', err);
-          show_toast(t('phone_unlink_failed'), 'error');
-          unlink.disabled = false;
-          refresh_account_ui();
-        });
-      });
       actions.appendChild(runAll);
       actions.appendChild(ask);
       actions.appendChild(claimBtn);
       actions.appendChild(news);
-      actions.appendChild(unlink);
-      row.appendChild(avatar);
-      row.appendChild(infoEl);
-      row.appendChild(dot);
+
+      row.appendChild(top);
       row.appendChild(actions);
       wrap.appendChild(row);
     });
