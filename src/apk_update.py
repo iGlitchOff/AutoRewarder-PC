@@ -177,3 +177,62 @@ def update_payload():
         "size": int(info.get("size") or 0),
         "apk": "/update/apk",
     }
+
+
+_CACHED_APK_URL = ""
+_CACHED_APK_TS = 0.0
+_FETCHING_APK_URL = False
+
+
+def _refresh_latest_apk_url():
+    global _CACHED_APK_URL, _CACHED_APK_TS, _FETCHING_APK_URL
+    import time
+
+    try:
+        repo = os.environ.get("AR_MOBILE_GITHUB_REPO") or MOBILE_REPO
+        url = f"https://api.github.com/repos/{repo}/releases/latest"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "AutoRewarder",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
+        if token:
+            req.add_header("Authorization", "Bearer " + token)
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        assets = data.get("assets") if isinstance(data, dict) else None
+        if isinstance(assets, list):
+            for asset in assets:
+                name = str(asset.get("name") or "").lower()
+                dl = str(asset.get("browser_download_url") or "")
+                if name.endswith(".apk") and dl:
+                    _CACHED_APK_URL = dl
+                    _CACHED_APK_TS = time.time()
+                    return
+    except Exception:
+        pass
+    finally:
+        _FETCHING_APK_URL = False
+
+
+def latest_apk_download_url() -> str:
+    """Return direct download URL for the latest AutoRewarder Mobile APK."""
+    global _FETCHING_APK_URL
+    import threading
+    import time
+
+    repo = os.environ.get("AR_MOBILE_GITHUB_REPO") or MOBILE_REPO
+    fallback = (
+        f"https://github.com/{repo}/releases/download/"
+        f"v{PHONE_VERSION_NAME}/AutoRewarder-Mobile-v{PHONE_VERSION_NAME}.apk"
+    )
+    now = time.time()
+    if (not _CACHED_APK_URL or (now - _CACHED_APK_TS) > 300) and not _FETCHING_APK_URL:
+        _FETCHING_APK_URL = True
+        threading.Thread(
+            target=_refresh_latest_apk_url, daemon=True, name="apk-url"
+        ).start()
+    return _CACHED_APK_URL or fallback

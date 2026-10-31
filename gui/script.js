@@ -2100,6 +2100,15 @@ function render_phone_device(info) {
 
   const modal = document.getElementById('phone_pair_modal');
   if (modal && !modal.hidden) {
+    const apkQr = document.getElementById('phone_apk_qr');
+    if (apkQr) {
+      if (info && info.apk_qr) {
+        apkQr.src = info.apk_qr;
+        apkQr.hidden = false;
+      } else {
+        apkQr.hidden = true;
+      }
+    }
     const codeEl = document.getElementById('phone_pair_code');
     const metaEl = document.getElementById('phone_pair_meta');
     if (info && info.pairing && info.code) {
@@ -2127,11 +2136,52 @@ function render_phone_device(info) {
   }
 }
 
+function set_phone_pair_step(step) {
+  const isStep1 = step !== 2;
+  const s1 = document.getElementById('phone_pair_step1');
+  const s2 = document.getElementById('phone_pair_step2');
+  const t1 = document.getElementById('pair_tab_step1');
+  const t2 = document.getElementById('pair_tab_step2');
+  const nextBtn = document.getElementById('phone_pair_next_btn');
+  const backBtn = document.getElementById('phone_pair_back_btn');
+  if (s1) s1.hidden = !isStep1;
+  if (s2) s2.hidden = isStep1;
+  if (t1) {
+    t1.classList.toggle('is-active', isStep1);
+    t1.setAttribute('aria-selected', String(isStep1));
+  }
+  if (t2) {
+    t2.classList.toggle('is-active', !isStep1);
+    t2.setAttribute('aria-selected', String(!isStep1));
+  }
+  if (nextBtn) nextBtn.hidden = !isStep1;
+  if (backBtn) backBtn.hidden = isStep1;
+}
+
+function copy_apk_download_link() {
+  const url = (_phoneCache && _phoneCache.apk_download_url) || 'https://github.com/iGlitchOn/AutoRewarder-Mobile/releases/latest';
+  const done = function () { show_toast(t('pair.apk_link_copied'), 'success'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(done).catch(function () {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        done();
+      } catch (e) {}
+    });
+  }
+}
+
 function begin_phone_pairing() {
   if (!window.pywebview || !pywebview.api) return;
   pywebview.api.begin_phone_pairing().then(function (info) {
     const modal = document.getElementById('phone_pair_modal');
     if (modal) modal.hidden = false;
+    set_phone_pair_step(1);
     render_phone_device(info);
   }).catch(function (err) {
     show_toast(t('pair_failed'), 'error');

@@ -149,13 +149,19 @@ class PhoneBridge:
         pairing = bool(self._pair_code and time.time() < self._pair_until)
         payload = self._pair_payload(remote) if pairing else ""
         qr = ""
-        if payload:
-            try:
-                from .qr_png import qr_data_url
+        apk_url = ""
+        apk_qr = ""
+        try:
+            from .apk_update import latest_apk_download_url
+            from .qr_png import qr_data_url
 
+            apk_url = latest_apk_download_url()
+            if apk_url:
+                apk_qr = qr_data_url(apk_url)
+            if payload:
                 qr = qr_data_url(payload)
-            except Exception:
-                qr = ""
+        except Exception:
+            qr = ""
         return {
             "ip": _lan_ip(),
             "port": self.port,
@@ -168,6 +174,8 @@ class PhoneBridge:
             "code": self._pair_code if pairing else None,
             "payload": payload,
             "qr": qr,
+            "apk_download_url": apk_url,
+            "apk_qr": apk_qr,
             "phones": public,
         }
 

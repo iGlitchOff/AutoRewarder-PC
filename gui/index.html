@@ -19,7 +19,7 @@
         </div>
         <div class="brand-text">
           <h1>AutoRewarder</h1>
-          <span class="brand-sub" id="app_version">Microsoft Rewards · 4.4.2</span>
+          <span class="brand-sub" id="app_version">Microsoft Rewards · 4.4.3</span>
         </div>
       </div>
 
@@ -429,7 +429,7 @@
     </div>
   </div>
 
-  <!-- ==================== Phone pairing modal ==================== -->
+  <!-- ==================== Phone pairing modal (2 steps) ==================== -->
   <div id="phone_pair_modal" class="modal-backdrop" hidden>
     <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="phone_pair_title">
       <div class="modal-header">
@@ -442,14 +442,41 @@
         </button>
       </div>
       <div class="modal-body">
-        <p class="modal-message" data-i18n="pair.hint">On the phone, enter or scan this code. The phone finds this PC by itself (remote tunnel). Same Microsoft account — not a second login.</p>
-        <div class="pair-code" id="phone_pair_code" title="Click to copy">------</div>
-        <button class="btn-secondary" type="button" id="phone_pair_copy" onclick="copy_pair_code()" data-i18n="pair.copy">Copy code</button>
-        <img id="phone_pair_qr" class="pair-qr" alt="Pairing QR" hidden>
-        <p class="pair-meta" id="phone_pair_meta" data-i18n="pair.waiting">Starting remote link…</p>
+        <div class="pair-stepper" role="tablist">
+          <button type="button" class="pair-step-tab is-active" id="pair_tab_step1" role="tab" aria-selected="true" onclick="set_phone_pair_step(1)">
+            <span class="step-num">1</span>
+            <span data-i18n="pair.step1_tab">Install app</span>
+          </button>
+          <button type="button" class="pair-step-tab" id="pair_tab_step2" role="tab" aria-selected="false" onclick="set_phone_pair_step(2)">
+            <span class="step-num">2</span>
+            <span data-i18n="pair.step2_tab">Link phone</span>
+          </button>
+        </div>
+
+        <!-- Step 1: Download & Install latest Mobile APK -->
+        <div id="phone_pair_step1" class="pair-step-panel">
+          <p class="modal-message" data-i18n="pair.step1_desc">Scan this QR code with your phone's camera to automatically download the latest AutoRewarder APK.</p>
+          <img id="phone_apk_qr" class="pair-qr" alt="Download APK QR" hidden>
+          <div class="pair-center-actions">
+            <button class="btn-secondary" type="button" id="phone_apk_copy" onclick="copy_apk_download_link()" data-i18n="pair.copy_apk_link">Copy download link</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Pair with QR or 6-digit code -->
+        <div id="phone_pair_step2" class="pair-step-panel" hidden>
+          <p class="modal-message" data-i18n="pair.hint">Open AutoRewarder on your phone and scan this QR code or enter the 6-digit code below.</p>
+          <div class="pair-code" id="phone_pair_code" title="Click to copy">------</div>
+          <div class="pair-center-actions">
+            <button class="btn-secondary" type="button" id="phone_pair_copy" onclick="copy_pair_code()" data-i18n="pair.copy">Copy code</button>
+          </div>
+          <img id="phone_pair_qr" class="pair-qr" alt="Pairing QR" hidden>
+          <p class="pair-meta" id="phone_pair_meta" data-i18n="pair.waiting">Starting remote link…</p>
+        </div>
       </div>
       <div class="modal-footer">
-        <button class="btn-secondary" type="button" onclick="cancel_phone_pairing()">Cancel</button>
+        <button class="btn-secondary" type="button" id="phone_pair_back_btn" onclick="set_phone_pair_step(1)" data-i18n="pair.back_step1" hidden>← Step 1: Install</button>
+        <button class="btn-secondary" type="button" onclick="cancel_phone_pairing()" data-i18n="cancel">Cancel</button>
+        <button class="btn-primary" type="button" id="phone_pair_next_btn" onclick="set_phone_pair_step(2)" data-i18n="pair.next_step2">Next: Link phone →</button>
       </div>
     </div>
   </div>
