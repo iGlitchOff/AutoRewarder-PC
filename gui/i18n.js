@@ -440,6 +440,8 @@ const UI_COPY = {
   "phone.unlink": { en: "Unlink this phone", es: "Desvincular este celular", pt: "Desvincular este celular", zh: "取消关联此手机" },
   "phone.linked": { en: "Linked to PC", es: "Vinculado al PC", pt: "Vinculado ao PC", zh: "已关联到电脑" },
   "phone.qr": { en: "Scan QR", es: "Escanear QR", pt: "Escanear QR", zh: "扫描二维码" },
+  "phone.qr_step1_notice": { en: "That is the Step 1 (Install app) QR. On the PC, go to Step 2 (Link phone) and scan that QR.", es: "Ese es el QR del Paso 1 (Instalar app). En el PC pasa al Paso 2 (Vincular) y escanea ese QR.", pt: "Esse é o QR do Passo 1 (Instalar app). No PC, vá para o Passo 2 (Vincular) e escaneie esse QR.", zh: "这是第 1 步（安装应用）的二维码。请在电脑上切换到第 2 步（关联手机）并扫描该二维码。" },
+  "phone.qr_invalid_notice": { en: "Invalid QR code. Please scan the pairing QR from Step 2 on the PC or enter the 6-digit code.", es: "QR no válido. Escanea el QR de vinculación del Paso 2 en el PC o escribe el código de 6 dígitos.", pt: "QR inválido. Escaneie o QR de vinculação do Passo 2 no PC ou digite o código de 6 dígitos.", zh: "无效二维码。请扫描电脑上第 2 步的关联二维码或输入 6 位代码。" },
   "phone.online": { en: "Online", es: "En línea", pt: "Online", zh: "在线" },
   "phone.offline": { en: "Offline", es: "Desconectado", pt: "Offline", zh: "离线" },
   "phone.pc_running": { en: "PC is running", es: "El PC está ejecutándose", pt: "O PC está executando", zh: "电脑正在运行" },

@@ -1,4 +1,4 @@
-/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.2). */
+/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.3). */
 function native() {
   try { return window.Android || null; } catch (e) { return null; }
 }
@@ -431,28 +431,22 @@ function applyFound(found) {
 function parsePairText(text) {
   text = String(text || "").trim();
   if (!text) return null;
+  if (/github\.com\/.*\/releases|\.apk(?:\?|#|$)/i.test(text)) {
+    return { kind: "apk_qr" };
+  }
   if (/^\d{6}$/.test(text)) {
     const codeEl = document.getElementById("pair_code");
     if (codeEl) codeEl.value = text;
     return { code: text };
   }
-  if (/^AR\d+\|/.test(text)) {
+  if (/^AR\d+\|/i.test(text)) {
     window.onBeaconRaw(text);
-    return state.found || { raw: text };
-  }
-  const urlMatch = text.match(/https?:\/\/[^\s|]+/i);
-  const codeMatch = text.match(/\b(\d{6})\b/);
-  if (codeMatch) {
-    const codeEl = document.getElementById("pair_code");
-    if (codeEl) codeEl.value = codeMatch[1];
-  }
-  if (urlMatch) {
-    applyFound({
-      url: urlMatch[0].replace(/\/$/, ""),
-      code: codeMatch ? codeMatch[1] : "",
-      sig: "",
-    });
-    return state.found;
+    const parts = text.split("|");
+    const url = parts.length >= 2 ? parts[1] : "";
+    const code = parts.length >= 3 ? parts[2] : "";
+    if (url && /^https?:\/\//i.test(url)) {
+      return { url: url, code: code };
+    }
   }
   return null;
 }
@@ -499,8 +493,18 @@ window.onLanFound = function (url) {
 
 window.onQrScanned = function (text) {
   state.scanningQr = false;
-  const parsed = parsePairText(text);
-  if ((parsed && parsed.url) || (state.found && state.found.url)) {
+  if (!state.pairing) setPairBusy(false);
+  let parsed = null;
+  try {
+    parsed = parsePairText(text);
+  } catch (e) {
+    parsed = null;
+  }
+  if (parsed && parsed.kind === "apk_qr") {
+    setPairStatus(t("phone.qr_step1_notice"));
+    return;
+  }
+  if (parsed && parsed.url) {
     setPairStatus("QR leído. Vinculando…");
     doPair();
     return;
@@ -510,7 +514,7 @@ window.onQrScanned = function (text) {
     doPair();
     return;
   }
-  setPairStatus("QR leído, pero no era el de AutoRewarder. Escribe el código o vuelve a escanear.");
+  setPairStatus(t("phone.qr_invalid_notice"));
 };
 
 function waitForUrl(ms) {
@@ -532,6 +536,7 @@ async function doPair() {
   }
   const code = String(document.getElementById("pair_code").value || "").replace(/\D/g, "");
   if (code.length !== 6) {
+    setPairBusy(false);
     setPairStatus("Pon el código de 6 dígitos del PC.");
     return;
   }
@@ -1035,7 +1040,7 @@ function applyMarket(market) {
 function showAppVersion() {
   const el = document.getElementById("app_version");
   if (!el) return;
-  let ver = "4.4.2";
+  let ver = "4.4.3";
   try {
     const n = native();
     if (n && n.appVersionName) ver = String(n.appVersionName() || ver);
@@ -1511,7 +1516,7 @@ async function checkPhoneUpdate(manual) {
   }
   const n = native();
   try {
-    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.2") : "4.4.2";
+    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.3") : "4.4.3";
     const mineCode = n && n.appVersionCode ? Number(n.appVersionCode() || 0) : 0;
     const newerThanMine = function (update) {
       if (!update) return false;
