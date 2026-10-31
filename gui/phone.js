@@ -1,4 +1,4 @@
-/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.3). */
+/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.4). */
 function native() {
   try { return window.Android || null; } catch (e) { return null; }
 }
@@ -1026,8 +1026,8 @@ function confirmBingReady() {
     return;
   }
   log("Comprobando la sesión de Rewards…");
-  setBingBanner("Comprobando la sesión de Rewards…", true);
-  probeBingSession("status");
+  setBingBanner("Comprobando la sesión de Rewards…", false);
+  probeBingSession("manual");
 }
 
 function applyMarket(market) {
@@ -1040,7 +1040,7 @@ function applyMarket(market) {
 function showAppVersion() {
   const el = document.getElementById("app_version");
   if (!el) return;
-  let ver = "4.4.3";
+  let ver = "4.4.4";
   try {
     const n = native();
     if (n && n.appVersionName) ver = String(n.appVersionName() || ver);
@@ -1164,12 +1164,20 @@ function deliverProbe(loggedIn, purpose) {
     return;
   }
   if (loggedIn) {
-    if (!wasReady) log("Sesión de Rewards lista en esta app.");
+    if (!wasReady || purpose === "manual") {
+      log("Sesión de Rewards lista en esta app.");
+    }
+    setBingBanner("");
     if (state.pendingBingKind) {
       const kind = state.pendingBingKind;
       state.pendingBingKind = null;
       runPhone(kind);
     }
+    return;
+  }
+  if (purpose === "manual") {
+    log("No se detectó sesión activa. Pulsa Iniciar sesión en Rewards.");
+    setBingBanner(t("bing.nosession"), true);
     return;
   }
   if (purpose === "paired" && !state.waitingBingLogin) {
@@ -1516,7 +1524,7 @@ async function checkPhoneUpdate(manual) {
   }
   const n = native();
   try {
-    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.3") : "4.4.3";
+    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.4") : "4.4.4";
     const mineCode = n && n.appVersionCode ? Number(n.appVersionCode() || 0) : 0;
     const newerThanMine = function (update) {
       if (!update) return false;
