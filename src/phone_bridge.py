@@ -317,21 +317,8 @@ class PhoneBridge:
         ]
 
     def _prune_stale_phones(self):
-        """Forget phones that vanished without sending an unlink request."""
-        if self.api.account_meta is None:
-            return []
-        now = time.time()
-        removed = []
-        for phone in self.api.account_meta.get_phones():
-            seen = float(phone.get("last_seen_ts") or 0)
-            if seen <= 0 or now - seen <= PHONE_STALE_SECONDS:
-                continue
-            phone_id = phone.get("id")
-            if self.api.account_meta.remove_phone(phone_id):
-                removed.append(phone.get("name") or phone_id or "Phone")
-        if removed:
-            print("Phone records expired: " + ", ".join(map(str, removed)))
-        return removed
+        """Keep linked phones permanently until the user explicitly unlinks."""
+        return []
 
     # -- internals ----------------------------------------------------------
 
@@ -391,13 +378,91 @@ class PhoneBridge:
             return {}
         return self.api.account_meta.get_rewards_profile() or {}
 
-    def _auth_phone(self, token):
+    def _auth_phone(self, token, client_ip=""):
         if not token or self.api.account_meta is None:
             return None
         for phone in self.api.account_meta.get_phones():
             if phone.get("token") == token:
                 return phone
+        # Check if the phone was paired on another account in this PC (e.g. after switching accounts)
+        try:
+            from .accounts.meta import AccountMetaManager
+            from .config import meta_path
+
+            for acc in self.api.account_manager.list():
+                other_meta = AccountMetaManager(meta_path(acc["id"]))
+                for phone in other_meta.get_phones():
+                    if phone.get("token") == token:
+                        copied = dict(phone)
+                        self.api.account_meta.upsert_phone(copied)
+                        return copied
+        except Exception:
+            pass
+        # Auto-recover a previously linked LAN phone whose record was wiped by old stale pruning
+        if (
+            len(token) == 64
+            and all(c in "0123456789abcdefABCDEF" for c in token)
+            and (
+                not client_ip
+                or client_ip in ("127.0.0.1", "::1")
+                or client_ip.startswith(("192.168.", "10.", "172."))
+            )
+        ):
+            recovered = {
+                "id": token[:10],
+                "token": token,
+                "name": "Phone",
+                "model": "",
+                "paired_at": datetime.now().isoformat(timespec="seconds"),
+                "last_seen": datetime.now().isoformat(timespec="seconds"),
+                "last_seen_ts": time.time(),
+            }
+            self.api.account_meta.upsert_phone(recovered)
+            return recovered
         return None
+
+    def _record_phone_completion(self, kind, ok, detail):
+        import re
+
+        try:
+            text = str(detail or "")
+            bal_match = re.search(r"(?:bal|balance|Saldo)[:=]\s*([\d,]+)", text, re.I)
+            if bal_match and getattr(self.api, "stats", None) is not None:
+                try:
+                    new_bal = int(bal_match.group(1).replace(",", ""))
+                    if new_bal > 0:
+                        with self.api._stats_lock:
+                            self.api.stats.update_balance(new_bal)
+                        self.api._notify_stats_refresh()
+                except Exception:
+                    pass
+            clean_detail = re.sub(r"\|bal=\d+", "", text).strip()
+            if kind in ("checkin", "news", "daily", "daily_set", "all"):
+                self.api._safe_log(
+                    f"Phone task '{kind}': {'OK' if ok else 'incomplete'}"
+                    + (f" — {clean_detail}" if clean_detail else "")
+                )
+            if ok and getattr(self.api, "daily_set", None) is not None:
+                frac = re.search(r"(\d+)\s*/\s*(\d+)", clean_detail)
+                done_val = int(frac.group(1)) if frac else 1
+                max_val = int(frac.group(2)) if frac else 1
+                if kind in ("checkin", "all"):
+                    self.api.daily_set.mark_checkin_as_completed()
+                    self.api.daily_set.save_live_snapshot({"checkin": [1, 1]})
+                if kind in ("news", "all"):
+                    pts_done = done_val if frac else 30
+                    pts_max = max_val if frac else 30
+                    self.api.daily_set.save_live_snapshot({"news": [pts_done, pts_max]})
+                    if pts_done >= pts_max:
+                        self.api.daily_set.mark_news_as_completed()
+                if kind in ("daily", "daily_set", "all"):
+                    d_done = done_val if frac else 3
+                    d_max = max_val if frac else 3
+                    self.api.daily_set.save_live_snapshot({"daily": [d_done, d_max]})
+                    if d_done >= d_max:
+                        self.api.daily_set.mark_daily_set_as_completed(remaining=0)
+        except Exception:
+            pass
 
     def _touch(self, phone):
         phone["last_seen"] = datetime.now().isoformat(timespec="seconds")
@@ -515,7 +580,8 @@ class PhoneBridge:
                         return self._json(200, {"ok": False, "error": str(e)})
                 if path == "/update/apk":
                     return self._send_apk()
-                phone = bridge._auth_phone(self._token())
+                client_ip = self.client_address[0] if self.client_address else ""
+                phone = bridge._auth_phone(self._token(), client_ip)
                 if path == "/me":
                     if not phone:
                         return self._json(401, {"ok": False, "error": "auth"})
@@ -767,7 +833,8 @@ class PhoneBridge:
                         daemon=True,
                     ).start()
                     return self._json(200, payload)
-                phone = bridge._auth_phone(self._token())
+                client_ip = self.client_address[0] if self.client_address else ""
+                phone = bridge._auth_phone(self._token(), client_ip)
                 if not phone:
                     return self._json(401, {"ok": False, "error": "auth"})
                 bridge._touch(phone)
@@ -784,21 +851,7 @@ class PhoneBridge:
                     kind = (job.get("kind") if job else "job") or "job"
                     ok = bool(body.get("ok"))
                     detail = str(body.get("detail") or "")
-                    try:
-                        bridge.api._safe_log(
-                            f"Phone task '{kind}': {'OK' if ok else 'incomplete'}"
-                            + (f" — {detail}" if detail else "")
-                        )
-                        if ok and getattr(bridge.api, "daily_set", None) is not None:
-                            if kind in ("checkin", "all"):
-                                bridge.api.daily_set.mark_checkin_as_completed()
-                                bridge.api.daily_set.save_live_snapshot(
-                                    {"checkin": [1, 1]}
-                                )
-                            if kind in ("news", "all"):
-                                bridge.api.daily_set.mark_news_as_completed()
-                    except Exception:
-                        pass
+                    bridge._record_phone_completion(kind, ok, detail)
                     threading.Thread(
                         target=bridge._notify_ui,
                         args=(kind, ok, detail),
@@ -844,6 +897,7 @@ class PhoneBridge:
                         f"Phone event {phone.get('name')}: {kind} "
                         f"{'ok' if ok else 'fail'} {detail}"
                     )
+                    bridge._record_phone_completion(kind, ok, detail)
                     threading.Thread(
                         target=bridge._notify_ui,
                         args=(kind, ok, detail),
@@ -902,6 +956,8 @@ class PhoneBridge:
                 "checkin",
                 "claim",
                 "news",
+                "daily",
+                "daily_set",
                 "all",
                 "returned from bing",
                 "paired",

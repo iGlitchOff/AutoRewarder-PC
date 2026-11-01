@@ -1,9 +1,9 @@
-/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.6). */
+/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.7). */
 function native() {
   try { return window.Android || null; } catch (e) { return null; }
 }
 const PHONE_PROTOCOL = 2;
-const PHONE_JOB_KINDS = { checkin: 1, news: 1 };
+const PHONE_JOB_KINDS = { checkin: 1, news: 1, daily: 1 };
 const state = {
   base: "",
   lan: "",
@@ -378,11 +378,8 @@ function dropLink(reason) {
 }
 
 function forgetStaleOn(url) {
-  const id = androidId();
-  if (!id || !url || state.token) return;
+  if (!url) return;
   const base = String(url).replace(/\/$/, "");
-  const body = { android_id: id, name: deviceName(), model: deviceModel() };
-  sendHttp("POST", base + "/phone/forget", body, "", 2500).catch(function () {});
   sendHttp("GET", base + "/discover", null, "", 2500).then(function (txt) {
     try {
       const d = JSON.parse(txt || "{}");
@@ -888,11 +885,22 @@ function detailDeniesSuccess(detail) {
 }
 
 function detailHasTaskCounter(detail) {
-  const m = String(detail || "").match(/(?:check-in|noticias|news)\s+(\d+)\s*\/\s*(\d+)/i);
+  const m = String(detail || "").match(/(?:check-in|noticias|news|daily\s*set)\s+(\d+)\s*\/\s*(\d+)/i);
   if (!m) return false;
   const done = Number(m[1]);
   const max = Number(m[2]);
   return done > 0 && max > 0;
+}
+
+function cleanTaskDetail(detail) {
+  const raw = String(detail || "");
+  const balMatch = raw.match(/\|bal=(\d+)/);
+  if (balMatch) {
+    const num = Number(balMatch[1]);
+    const el = document.getElementById("stat_total");
+    if (el && num > 0) el.textContent = num.toLocaleString();
+  }
+  return raw.replace(/\|bal=\d+/g, "").trim();
 }
 
 function reportedTaskOk(ok, detail) {
@@ -1006,6 +1014,7 @@ function updateBingUi() {
   const autoAllBtn = document.getElementById("phone_auto_all_btn");
   const checkinBtn = document.getElementById("phone_checkin_btn");
   const newsBtn = document.getElementById("phone_news_btn");
+  const dailyBtn = document.getElementById("phone_daily_btn");
   const readyBtn = document.getElementById("bing_ready_btn");
   if (pill) {
     pill.classList.toggle("ready", !!state.bingReady);
@@ -1019,7 +1028,7 @@ function updateBingUi() {
   if (readyBtn) readyBtn.hidden = !showReady;
   if (setup) setup.hidden = !(showLogin || showReady);
   const busy = !!state.pendingVerify || !!state.verifying;
-  [autoAllBtn, checkinBtn, newsBtn].forEach(function (el) {
+  [autoAllBtn, checkinBtn, newsBtn, dailyBtn].forEach(function (el) {
     if (el) el.disabled = !state.bingReady || busy;
   });
   if (state.waitingBingLogin) {
@@ -1060,7 +1069,7 @@ function applyMarket(market) {
 function showAppVersion() {
   const el = document.getElementById("app_version");
   if (!el) return;
-  let ver = "4.4.6";
+  let ver = "4.4.7";
   try {
     const n = native();
     if (n && n.appVersionName) ver = String(n.appVersionName() || ver);
@@ -1231,7 +1240,7 @@ function loginBingApp() {
 
 function runAllPhoneTasks() {
   if (state.pendingVerify || state.verifying) return;
-  state.autoQueue = ["news"];
+  state.autoQueue = ["news", "daily"];
   runPhone("checkin", true);
 }
 
@@ -1244,7 +1253,7 @@ function runPhone(kind, forceAutomated) {
     return;
   }
   if (state.market) applyMarket(state.market);
-  const label = kind === "news" ? t("phone.news") : t("phone.checkin");
+  const label = kind === "news" ? t("phone.news") : (kind === "daily" ? t("phone.daily") : t("phone.checkin"));
   state.askingVerify = false;
   state.pendingVerify = kind;
   state.verifying = true;
@@ -1269,7 +1278,8 @@ window.onBingProgress = function (msg) {
 
 window.onBingTask = function (ok, detail) {
   const kind = state.pendingVerify || "task";
-  const text = String(detail || "");
+  const rawText = String(detail || "");
+  const text = cleanTaskDetail(rawText);
   state.verifying = false;
   if (text === "closed") {
     state.pendingVerify = null;
@@ -1285,21 +1295,16 @@ window.onBingTask = function (ok, detail) {
   }
   const msg = text || (ok ? t("ready") : "no se pudo");
   const reported = reportedTaskOk(ok, msg);
-  if (!reported) {
-    state.pendingVerify = null;
-    state.askingVerify = false;
-    finishPending(false, msg);
-    reportEvent(kind, false, msg);
-    refreshAll();
-    if (state.autoQueue && state.autoQueue.length > 0) {
-      const nextKind = state.autoQueue.shift();
-      setTimeout(function () { runPhone(nextKind, true); }, 600);
-    }
-    return;
+  state.pendingVerify = null;
+  state.askingVerify = false;
+  finishPending(reported, msg);
+  reportEvent(kind, reported, rawText || msg);
+  setBingBanner(reported ? msg : "", !reported);
+  refreshAll();
+  if (state.autoQueue && state.autoQueue.length > 0) {
+    const nextKind = state.autoQueue.shift();
+    setTimeout(function () { runPhone(nextKind, true); }, 600);
   }
-  state.pendingSuccess = { kind: kind, detail: msg };
-  setBingBanner(t("phone.checking_session"), false);
-  probeBingSession("success");
 };
 
 function reportEvent(kind, ok, detail) {
@@ -1534,7 +1539,7 @@ async function checkPhoneUpdate(manual) {
   }
   const n = native();
   try {
-    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.6") : "4.4.6";
+    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.7") : "4.4.7";
     const mineCode = n && n.appVersionCode ? Number(n.appVersionCode() || 0) : 0;
     const newerThanMine = function (update) {
       if (!update) return false;

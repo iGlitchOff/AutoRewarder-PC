@@ -1,19 +1,22 @@
-"""Mobile Rewards tasks via a simulated Bing *phone* client.
+"""Mobile Rewards tasks via the official Bing app OAuth DAPI + BingSapphire session.
 
-Check-in, news and Bing-app streak only credit from the mobile Bing app.
-We do not install Windows Store apps or use winget. Edge is launched as an
-iPhone with the BingSapphire user-agent (the same client the Bing app uses).
+Check-in and Read-to-Earn news are claimed and verified against
+https://prod.rewardsplatform.microsoft.com/dapi/me/activities using the
+Bing mobile OAuth client (0000000040170455), checking real balance increases.
 """
 
 import random
+import time
+import uuid
+from urllib.parse import parse_qs, unquote, urlparse
 
+import requests
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 
 from .rewards_api import fetch_userinfo, parse_userinfo
 from ..utils import wait_or_stop
 
-# Bing *phone* client (Colombia). News and check-in live here, not on the PC dashboard.
 MARKET = "es-CO"
 APP_HOME = f"https://www.bing.com/?form=APMCS1&setmkt={MARKET}&setlang=es"
 NEWS_URL = (
@@ -21,9 +24,9 @@ NEWS_URL = (
 )
 NEWS_HOME = f"https://www.bing.com/news?form=APMCS1&setmkt={MARKET}"
 MSN_HOME = f"https://www.msn.com/es-co?ocid=bingnews&setmkt={MARKET}"
-READ_TO_EARN = f"https://rewards.bing.com/earn?setmkt={MARKET}"
+READ_TO_EARN = f"https://www.bing.com/readtoearn?form=APMCS1&setmkt={MARKET}"
 CHECKIN_URLS = (
-    f"https://rewards.bing.com/dashboard?setmkt={MARKET}",
+    f"https://www.bing.com/rewards/app/dashboard?form=APMCS1&setmkt={MARKET}",
     f"https://www.bing.com/rewards?form=APMCS1&setmkt={MARKET}",
     f"https://rewards.bing.com/?form=ML2N2V&setmkt={MARKET}",
     APP_HOME,
@@ -31,6 +34,22 @@ CHECKIN_URLS = (
 CHECKIN_URL = CHECKIN_URLS[0]
 EARN_URL = "https://rewards.bing.com/earn"
 DASHBOARD_URL = "https://rewards.bing.com/dashboard"
+
+BING_NATIVE_UA = (
+    "Bing/32.5.431027001 (com.microsoft.bing; build:431027001; iOS 17.6.1) "
+    "Alamofire/5.10.2"
+)
+TOKEN_URL = (
+    "https://login.live.com/oauth20_authorize.srf"
+    "?client_id=0000000040170455"
+    "&response_type=token"
+    "&redirect_uri=https://login.live.com/oauth20_desktop.srf"
+    "&scope=service::prod.rewardsplatform.microsoft.com::MBI_SSL"
+    "&display=touch"
+    "&prompt=none"
+)
+DAPI_ACTIVITIES = "https://prod.rewardsplatform.microsoft.com/dapi/me/activities"
+DAPI_ME = "https://prod.rewardsplatform.microsoft.com/dapi/me"
 
 _LIVE_APP_PROGRESS_JS = r"""
 try {
@@ -76,16 +95,6 @@ try {
       break;
     }
   }
-  if (!best) {
-    for (var j = 0; j < nodes.length; j++) {
-      var n = nodes[j];
-      var t2 = ((n.innerText || '') + '').replace(/\s+/g, ' ');
-      if (/Check-in:\s*0\s*\/\s*1/i.test(t2)) {
-        best = n.closest('button, a, [role="button"], [class*="card"]') || n;
-        break;
-      }
-    }
-  }
   if (!best) return false;
   best.scrollIntoView({block:'center'});
   best.click();
@@ -94,20 +103,83 @@ try {
 """
 
 
+def _token_from_url(url):
+    if not url or "access_token=" not in url:
+        return None
+    frag = urlparse(url).fragment or ""
+    if "access_token=" not in frag:
+        frag = url.split("#", 1)[-1]
+    token = (parse_qs(frag).get("access_token") or [None])[0]
+    return unquote(token) if token else None
+
+
+def _dapi_headers(token, country="us"):
+    return {
+        "Authorization": f"Bearer {token}",
+        "User-Agent": BING_NATIVE_UA,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-Rewards-Country": country,
+        "X-Rewards-Language": "en",
+        "X-Rewards-ismobile": "true",
+    }
+
+
+def _dapi_me(token, country="us"):
+    try:
+        r = requests.get(
+            DAPI_ME,
+            params={"channel": "SAAndroid", "options": 613},
+            headers=_dapi_headers(token, country),
+            timeout=20,
+        )
+        if r.status_code == 200 and r.content:
+            return r.json()
+    except Exception:
+        pass
+    return {}
+
+
+def _dapi_post(token, payload, country="us"):
+    try:
+        r = requests.post(
+            DAPI_ACTIVITIES,
+            headers=_dapi_headers(token, country),
+            json=payload,
+            timeout=20,
+        )
+        data = r.json() if r.content else {}
+        return {"status": r.status_code, "data": data}
+    except Exception as exc:
+        return {"status": -1, "data": str(exc)}
+
+
+def _balance_of(resp):
+    if not isinstance(resp, dict):
+        return None
+    data = resp.get("data") if "data" in resp else resp
+    if not isinstance(data, dict):
+        return None
+    inner = data.get("response") if isinstance(data.get("response"), dict) else data
+    b = inner.get("balance") if isinstance(inner, dict) else None
+    try:
+        return int(b) if b is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 class BingAppTasks:
     """Run check-in, news and app-streak as the Bing mobile app."""
 
     def __init__(self, logger=None):
         self.logger = logger
-        self._active_stop_event = None
+        self._cached_token = None
 
     def _log(self, message):
         if self.logger:
             self.logger(message)
 
     def _stopped(self, stop_event):
-        if stop_event is not None:
-            self._active_stop_event = stop_event
         return stop_event is not None and stop_event.is_set()
 
     def _wait(self, seconds, stop_event):
@@ -134,39 +206,65 @@ class BingAppTasks:
                 pass
             return True
         except Exception as e:
-            from ..emulator.driver import is_browser_closed_error
-
-            if is_browser_closed_error(e):
-                if self._active_stop_event is not None:
-                    self._active_stop_event.set()
-                self._log("Browser window closed — stopping mobile app tasks.")
-                return False
             self._log(f"[WARNING] Navigation failed ({url}): {e}")
             return False
 
     def _userinfo(self, driver):
         return fetch_userinfo(driver)
 
+    def _get_app_token(self, driver, stop_event=None):
+        if self._cached_token:
+            return self._cached_token
+        if driver is None or self._stopped(stop_event):
+            return None
+        for url in (TOKEN_URL, TOKEN_URL.replace("&prompt=none", "")):
+            if self._stopped(stop_event):
+                return None
+            self._safe_get(driver, url)
+            if self._wait(2.5, stop_event):
+                return None
+            try:
+                current = driver.current_url or ""
+            except Exception:
+                current = ""
+            token = _token_from_url(current)
+            if not token:
+                try:
+                    token = driver.execute_script(
+                        "return (location.hash||'').includes('access_token=') ? "
+                        "new URLSearchParams(location.hash.slice(1)).get('access_token') : null;"
+                    )
+                except Exception:
+                    token = None
+            if token:
+                self._cached_token = token
+                return token
+            try:
+                for xp in (
+                    "//button[contains(.,'Skip')]",
+                    "//button[contains(.,'Not now')]",
+                    "//button[contains(.,'Cancel')]",
+                    "//a[contains(.,'Skip')]",
+                    "//button[contains(.,'Omitir')]",
+                ):
+                    els = driver.find_elements(By.XPATH, xp)
+                    if els:
+                        driver.execute_script("arguments[0].click();", els[0])
+                        if self._wait(2.0, stop_event):
+                            return None
+                        token = _token_from_url(driver.current_url or "")
+                        if token:
+                            self._cached_token = token
+                            return token
+            except Exception:
+                pass
+        return None
+
     def read_live_app_progress(self, driver, stop_event=None):
-        """Read check-in from the Bing *phone* client, not the PC earn page."""
+        """Read check-in and news from the Bing phone client."""
         out = {"hasNews": True}
         if driver is None or self._stopped(stop_event):
             return out
-        for url in CHECKIN_URLS:
-            if self._stopped(stop_event):
-                break
-            if not self._safe_get(driver, url):
-                continue
-            if self._wait(random.uniform(2.0, 3.5), stop_event):
-                break
-            try:
-                data = driver.execute_script(_LIVE_APP_PROGRESS_JS) or {}
-            except Exception:
-                data = {}
-            if isinstance(data, dict) and data:
-                out.update(data)
-            if out.get("checkin"):
-                break
         progress, max_pts = self._news_progress(driver)
         if max_pts:
             out["news"] = [progress, max_pts]
@@ -183,78 +281,37 @@ class BingAppTasks:
                 return False
         return False
 
-    def _checkin_destination(self, driver):
-        dest = parse_userinfo(self._userinfo(driver)).get("checkin_url")
-        if dest and dest.startswith("/"):
-            dest = "https://rewards.bing.com" + dest
-        return dest
-
     def daily_checkin(self, driver, stop_event=None):
-        """Claim check-in from a BingSapphire (mobile Bing app) session."""
+        """Claim check-in via official Bing App OAuth DAPI and verify balance."""
         if self._stopped(stop_event) or driver is None:
             return False
         self._harden_driver(driver)
-        self._log("Mobile check-in: opening Rewards in the Bing phone client...")
-        dest = self._checkin_destination(driver)
-        urls = ((dest,) + CHECKIN_URLS) if dest else CHECKIN_URLS
-        opened = False
-        for url in urls:
-            if self._stopped(stop_event):
-                return False
-            if self._safe_get(driver, url):
-                opened = True
-                if self._wait(random.uniform(2.5, 4.0), stop_event):
+        token = self._get_app_token(driver, stop_event)
+        if token:
+            me = _dapi_me(token, "us")
+            start_bal = _balance_of(me)
+            for typ in (103, 101):
+                if self._stopped(stop_event):
                     return False
-                clicked = False
-                try:
-                    clicked = bool(driver.execute_script(_CLICK_CHECKIN_JS))
-                except Exception:
-                    clicked = False
-                if clicked:
-                    self._log("Mobile check-in: tapped the Check-in control.")
-                    if self._wait(3.5, stop_event):
-                        return False
-                    break
-        if not opened:
-            return False
-        if self._checkin_complete_from_api(driver):
-            self._log("Mobile check-in is complete.")
-            return True
-        # The PC dashboard tile is a Bing-*app* deep link. Clicking it on the
-        # web does not navigate (verified live: stays on /dashboard).
-        try:
-            self._safe_get(driver, "https://rewards.bing.com/dashboard")
-            if self._wait(1.5, stop_event):
-                return False
-            driver.execute_script("""
-                var nodes=document.querySelectorAll('button,[role=button],a,[data-react-aria-pressable]');
-                for (var i=0;i<nodes.length;i++){
-                  var t=(nodes[i].innerText||'');
-                  if (/Check-in:\\s*0\\s*\\/\\s*1/i.test(t)) { nodes[i].click(); return true; }
+                payload = {
+                    "id": str(uuid.uuid4()),
+                    "amount": 1,
+                    "type": typ,
+                    "attributes": {"offerid": "Gamification_Sapphire_DailyCheckIn"},
+                    "country": "us",
                 }
-                return false;
-                """)
-            self._wait(3.0, stop_event)
-        except Exception:
-            pass
+                resp = _dapi_post(token, payload, "us")
+                bal = _balance_of(resp)
+                if bal is not None and start_bal is not None and bal > start_bal:
+                    self._log(f"Mobile check-in complete (+{bal - start_bal} pts).")
+                    return True
+                if bal is not None:
+                    start_bal = bal
+                if self._wait(1.2, stop_event):
+                    return False
         if self._checkin_complete_from_api(driver):
             self._log("Mobile check-in is complete.")
             return True
-        live = self.read_live_app_progress(driver, stop_event=stop_event)
-        checkin = live.get("checkin")
-        if (
-            isinstance(checkin, (list, tuple))
-            and len(checkin) == 2
-            and int(checkin[0]) >= int(checkin[1])
-            and int(checkin[1]) > 0
-        ):
-            self._log(f"Mobile check-in is complete ({checkin[0]}/{checkin[1]}).")
-            return True
-        self._log(
-            "Mobile check-in: Microsoft only credits this from the Bing phone "
-            "app. The web dashboard may redirect or omit the app tile. "
-            "Not marking done without a live counter."
-        )
         return False
 
     def news_progress(self, driver):
@@ -269,157 +326,61 @@ class BingAppTasks:
                 return 0, 0
         return 0, 0
 
-    @staticmethod
-    def _is_news_article(href):
-        h = (href or "").lower()
-        if not h.startswith("http"):
-            return False
-        if any(
-            bad in h for bad in ("javascript:", "mailto:", "login", "account.microsoft")
-        ):
-            return False
-        # Search listings do not credit read-to-earn.
-        if "bing.com/search" in h:
-            return False
-        if "bing.com/news/search" in h:
-            return False
-        if "msn.com/" in h:
-            return True
-        if "microsoftnews" in h or "news.microsoft.com" in h:
-            return True
-        if "bing.com/news" in h:
-            return True
-        return False
-
-    def _news_hrefs(self, driver):
-        hrefs = []
-        seen = set()
-        for selector in NEWS_CARD_SELECTORS:
-            try:
-                for el in driver.find_elements(By.CSS_SELECTOR, selector):
-                    try:
-                        href = el.get_attribute("href") or ""
-                        if href.startswith("/"):
-                            href = "https://www.bing.com" + href
-                        if href in seen or not self._is_news_article(href):
-                            continue
-                        seen.add(href)
-                        hrefs.append(href)
-                    except Exception:
-                        continue
-            except WebDriverException:
-                continue
-        return hrefs
-
     def read_news(self, driver, stop_event=None, max_articles=10):
-        """Read news articles inside the simulated Bing mobile app."""
+        """Claim Read-to-Earn news via Bing App OAuth DAPI (~3.2s per article, verified by balance)."""
         if self._stopped(stop_event) or driver is None:
             return False
         self._harden_driver(driver, seconds=18)
-        progress, max_pts = self._news_progress(driver)
-        start_progress = progress
-        if max_pts and progress >= max_pts:
-            self._log(f"News already complete ({progress}/{max_pts} pts).")
-            return True
-        if max_pts == 0:
-            self._log(
-                "News: this account has no read-to-earn counter. "
-                "The '¿Has visto las noticias?' card is a Bing quiz in More activities, "
-                "not article reading. Skipping article crawl."
-            )
-            return False
-        self._log(
-            f"News: Bing phone client (Colombia), reading articles "
-            f"({progress}/{max_pts})."
-        )
-        hrefs = []
-        for url in (APP_HOME, NEWS_HOME, MSN_HOME, READ_TO_EARN, NEWS_URL):
-            if self._stopped(stop_event):
-                return False
-            if not self._safe_get(driver, url):
-                continue
-            if self._wait(random.uniform(2.5, 4.0), stop_event):
-                return False
-            hrefs.extend(self._news_hrefs(driver))
-        seen = set()
-        uniq = []
-        for href in hrefs:
-            if href in seen:
-                continue
-            seen.add(href)
-            uniq.append(href)
-        hrefs = uniq
-        if not hrefs:
-            self._log("[WARNING] No news article links on the Bing phone feed.")
-            return False
-        random.shuffle(hrefs)
-        target = max(1, min(max_articles, max(1, (max_pts - progress) // 3 + 1)))
-        read = 0
-        for href in hrefs:
-            if self._stopped(stop_event) or read >= target:
-                break
-            self._log(f"News: opening article {read + 1} in Bing mobile app...")
-            if not self._safe_get(driver, href):
-                continue
-            # Read-to-earn only credits after a real dwell, not a bounce.
-            if self._wait(random.uniform(12.0, 16.0), stop_event):
-                break
-            try:
-                driver.execute_script(
-                    "window.scrollBy(0, arguments[0]);", random.randint(250, 700)
-                )
-            except Exception:
-                pass
-            if self._wait(random.uniform(2.0, 4.0), stop_event):
-                break
-            read += 1
-            now_pts, now_max = self._news_progress(driver)
-            if now_max:
-                max_pts = now_max
-            if now_pts > progress:
-                self._log(f"News progress: {progress} → {now_pts}/{max_pts}")
-                progress = now_pts
-            if max_pts and progress >= max_pts:
-                break
-        new_progress, new_max = self._news_progress(driver)
-        if new_max:
-            max_pts = new_max
-        if new_progress > progress:
-            progress = new_progress
-            self._log(f"News progress: {progress}/{max_pts}")
-        self._log(f"News: opened {read} article(s) in Bing mobile app.")
-        credited = progress > start_progress or (max_pts and progress >= max_pts)
-        if not credited:
-            self._log(
-                f"[WARNING] News did not credit ({progress}/{max_pts} pts). "
-                "Not marking done."
-            )
-        return bool(credited)
+        token = self._get_app_token(driver, stop_event)
+        if token:
+            me = _dapi_me(token, "us")
+            last_bal = _balance_of(me)
+            start_bal = last_bal
+            articles = 0
+            stall = 0
+            for i in range(max_articles):
+                if self._stopped(stop_event):
+                    break
+                payload = {
+                    "amount": 1,
+                    "id": uuid.uuid4().hex + uuid.uuid4().hex,
+                    "type": 101,
+                    "attributes": {"offerid": "ENUS_readarticle3_30points"},
+                    "country": "us",
+                }
+                resp = _dapi_post(token, payload, "us")
+                bal = _balance_of(resp)
+                if last_bal is not None and bal is not None and bal > last_bal:
+                    gained = bal - last_bal
+                    last_bal = bal
+                    articles += 1
+                    stall = 0
+                    self._log(
+                        f"News {articles}/{max_articles}: +{gained} pts (balance: {bal})"
+                    )
+                else:
+                    stall += 1
+                    if bal is not None:
+                        last_bal = bal
+                    if stall >= 3:
+                        break
+                if self._wait(random.uniform(3.0, 3.8), stop_event):
+                    break
+            if articles > 0 or (
+                start_bal is not None and last_bal is not None and last_bal > start_bal
+            ):
+                return True
+        return False
 
     def bing_app_streak(self, driver, stop_event=None):
         """Use Bing as the phone app so the Bing app streak can credit."""
         if self._stopped(stop_event) or driver is None:
             return False
         self._harden_driver(driver, seconds=25)
-        self._log("Bing app streak: mobile BingSapphire session...")
-        for url in (
-            APP_HOME,
-            CHECKIN_URLS[0],
-            f"https://www.bing.com/search?q=noticias+hoy&form=APMCS1&setmkt={MARKET}",
-            NEWS_URL,
-        ):
+        for url in (APP_HOME, CHECKIN_URLS[0], NEWS_URL):
             if self._stopped(stop_event):
                 return False
             self._safe_get(driver, url)
-            if self._wait(random.uniform(4.0, 7.0), stop_event):
+            if self._wait(random.uniform(3.0, 5.0), stop_event):
                 return False
-            try:
-                driver.execute_script(
-                    "window.scrollBy(0, arguments[0]);", random.randint(200, 600)
-                )
-            except Exception:
-                pass
-            if self._wait(random.uniform(2.0, 4.0), stop_event):
-                return False
-        self._log("Bing app streak: mobile session finished.")
         return True

@@ -433,7 +433,7 @@
         </div>
         <div class="brand-text">
           <h1 data-i18n="phone.brand">AutoRewarder</h1>
-          <span class="brand-sub" id="app_version">Microsoft Rewards · 4.4.6</span>
+          <span class="brand-sub" id="app_version">Microsoft Rewards · 4.4.7</span>
         </div>
       </div>
       <button id="updates_btn" class="updates-btn" type="button" onclick="checkPhoneUpdate(true)" data-i18n="phone.updates" data-i18n-title="phone.updates">Check updates</button>
@@ -542,10 +542,11 @@
         <p class="bing-banner" id="bing_banner" hidden></p>
         <p class="manual-hint" id="bing_hint" data-i18n="phone.hint">Check-in and news count in the Bing app, same Microsoft account.</p>
         <div class="phone-actions-stack">
-          <button class="primary-btn-lg" id="phone_auto_all_btn" type="button" onclick="runAllPhoneTasks()" data-i18n="phone.run_all" disabled>Automate all (Check-in + Claim + News)</button>
-          <div class="phone-actions-grid">
+          <button class="primary-btn-lg" id="phone_auto_all_btn" type="button" onclick="runAllPhoneTasks()" data-i18n="phone.run_all" disabled>Automate all (Check-in + News + Daily Set)</button>
+          <div class="phone-actions-grid" style="grid-template-columns: repeat(3, 1fr);">
             <button class="tasks-only-btn" id="phone_checkin_btn" type="button" onclick="runPhone('checkin')" data-i18n="phone.checkin" disabled>Check-in</button>
             <button class="tasks-only-btn" id="phone_news_btn" type="button" onclick="runPhone('news')" data-i18n="phone.news" disabled>News</button>
+            <button class="tasks-only-btn" id="phone_daily_btn" type="button" onclick="runPhone('daily')" data-i18n="phone.daily" disabled>Daily Set</button>
           </div>
         </div>
         <div class="phone-actions-grid" id="bing_setup_actions">
