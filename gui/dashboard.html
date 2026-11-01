@@ -336,8 +336,11 @@
       for (const key of Object.keys(dailyData || {})) {
         if (key.length !== 10) continue;
         const v = dailyData[key] || {};
+        const phoneExtra = (typeof v.phone_points === 'number' && v.phone_points > 0)
+          ? v.phone_points
+          : (((v.checkins || 0) * 5) + ((v.news || 0) * 3));
         let pcPts = (v.pc || 0) * pps;
-        let mobilePts = (v.mobile || 0) * pps;
+        let mobilePts = (v.mobile || 0) * pps + phoneExtra;
         let dailyPts = (v.cards || 0) * ppc;
         let earnPts = (v.earn || 0) * ppc;
         let questPts = (v.quests || 0) * ppc;
@@ -349,15 +352,20 @@
           verifiedTotal = Math.max(0, v.end_balance - v.start_balance);
         }
         if (verifiedTotal !== null) {
-          if (rawTotal > 0 && rawTotal > verifiedTotal) {
+          if (rawTotal > 0 && rawTotal > verifiedTotal && verifiedTotal > 0) {
             const ratio = verifiedTotal / rawTotal;
             pcPts = Math.round(pcPts * ratio);
             mobilePts = Math.round(mobilePts * ratio);
             dailyPts = Math.round(dailyPts * ratio);
             earnPts = Math.round(earnPts * ratio);
             questPts = Math.max(0, verifiedTotal - (pcPts + mobilePts + dailyPts + earnPts));
-          } else if (rawTotal === 0 && verifiedTotal > 0) {
-            earnPts = verifiedTotal;
+          } else if (verifiedTotal > rawTotal) {
+            const extra = verifiedTotal - rawTotal;
+            if (phoneExtra > 0 || (v.mobile || 0) > 0) {
+              mobilePts += extra;
+            } else {
+              earnPts += extra;
+            }
           }
         }
         const finalTotal = pcPts + mobilePts + dailyPts + earnPts + questPts;

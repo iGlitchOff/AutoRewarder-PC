@@ -523,9 +523,11 @@ class StatsManager:
             return self.get_stats()
 
         stats = self.get_stats()
+        phone_pts = (checkin * 5) + (news * 3)
         session_estimate = (
             pc * POINTS_PER_SEARCH
             + mobile * POINTS_PER_SEARCH
+            + phone_pts
             + (cards + earn + quests) * POINTS_PER_CARD
         )
 
@@ -583,6 +585,9 @@ class StatsManager:
         bucket["cards"] += cards
         bucket["earn"] = bucket.get("earn", 0) + earn
         bucket["quests"] = bucket.get("quests", 0) + quests
+        bucket["checkins"] = bucket.get("checkins", 0) + checkin
+        bucket["news"] = bucket.get("news", 0) + news
+        bucket["phone_points"] = int(bucket.get("phone_points") or 0) + phone_pts
         bucket["runs"] += 1
         bucket["points_estimate"] = (
             int(bucket.get("points_estimate") or 0) + session_estimate
@@ -593,5 +598,111 @@ class StatsManager:
             )
         stats["daily"] = self._trim_daily(stats["daily"])
 
+        self.save_stats(stats)
+        return stats
+
+    def record_phone_activity(self, kind, points_gained=0, count=1, new_balance=None):
+        """
+        Record mobile companion activity (Check-in, Read-to-Earn News, Daily Set)
+        directly into today's chart bucket and lifetime totals so phone points
+        immediately appear on the PC dashboard chart and 'Earned today' tile.
+        """
+        stats = self.get_stats()
+        now_iso = datetime.now().isoformat(timespec="seconds")
+        today = now_iso[:10]
+        bucket = stats["daily"].setdefault(
+            today,
+            {
+                "pc": 0,
+                "mobile": 0,
+                "cards": 0,
+                "earn": 0,
+                "quests": 0,
+                "checkins": 0,
+                "news": 0,
+                "phone_points": 0,
+                "runs": 0,
+            },
+        )
+        lifetime = stats["lifetime"]
+        kind = str(kind or "").strip().lower()
+        pts = max(0, int(points_gained or 0))
+        cnt = max(0, int(count or 0))
+        added_pts = 0
+
+        if kind == "checkin":
+            already_checkins = int(bucket.get("checkins") or 0)
+            if already_checkins < 1:
+                bucket["checkins"] = 1
+                lifetime["checkins"] = int(lifetime.get("checkins") or 0) + 1
+                added_pts = pts if pts > 0 else 5
+                bucket["phone_points"] = (
+                    int(bucket.get("phone_points") or 0) + added_pts
+                )
+            elif pts > 0:
+                added_pts = pts
+                bucket["phone_points"] = max(int(bucket.get("phone_points") or 0), pts)
+        elif kind == "news":
+            prev_news = int(bucket.get("news") or 0)
+            target_news = max(
+                prev_news, min(10, cnt if cnt > 0 else (pts // 3 if pts > 0 else 10))
+            )
+            diff_news = max(0, target_news - prev_news)
+            bucket["news"] = target_news
+            lifetime["news_reads"] = int(lifetime.get("news_reads") or 0) + diff_news
+            target_news_pts = pts if pts > 0 else (target_news * 3)
+            prev_phone_pts = int(bucket.get("phone_points") or 0)
+            checkin_pts = 5 if int(bucket.get("checkins") or 0) > 0 else 0
+            new_phone_pts = max(prev_phone_pts, checkin_pts + target_news_pts)
+            added_pts = max(0, new_phone_pts - prev_phone_pts)
+            bucket["phone_points"] = new_phone_pts
+        elif kind in ("daily", "daily_set"):
+            prev_cards = int(bucket.get("cards") or 0)
+            target_cards = max(prev_cards, cnt if cnt > 0 else 3)
+            diff_cards = max(0, target_cards - prev_cards)
+            bucket["cards"] = target_cards
+            lifetime["daily_cards"] = int(lifetime.get("daily_cards") or 0) + diff_cards
+            added_pts = diff_cards * POINTS_PER_CARD
+
+        bucket["runs"] = max(1, int(bucket.get("runs") or 0))
+        if added_pts > 0:
+            bucket["points_estimate"] = (
+                int(bucket.get("points_estimate") or 0) + added_pts
+            )
+            lifetime["points_estimate"] = (
+                int(lifetime.get("points_estimate") or 0) + added_pts
+            )
+            bucket["points_delta"] = int(bucket.get("points_delta") or 0) + added_pts
+
+        if new_balance is not None and int(new_balance) > 0:
+            bal = int(new_balance)
+            prior = stats["balance"].get("current")
+            total_today_est = (
+                int(bucket.get("pc") or 0) * POINTS_PER_SEARCH
+                + int(bucket.get("mobile") or 0) * POINTS_PER_SEARCH
+                + int(bucket.get("phone_points") or 0)
+                + (
+                    int(bucket.get("cards") or 0)
+                    + int(bucket.get("earn") or 0)
+                    + int(bucket.get("quests") or 0)
+                )
+                * POINTS_PER_CARD
+            )
+            start_b = bucket.get("start_balance")
+            if start_b is None or start_b > bal - total_today_est:
+                bucket["start_balance"] = max(0, bal - total_today_est)
+            bucket["end_balance"] = bal
+            bucket["verified_points"] = max(
+                total_today_est,
+                max(0, bal - int(bucket.get("start_balance") or bal)),
+            )
+            stats["balance"]["previous"] = (
+                prior if prior is not None else bucket["start_balance"]
+            )
+            stats["balance"]["current"] = bal
+            stats["balance"]["updated_at"] = now_iso
+
+        stats["last_session"]["ended_at"] = now_iso
+        stats["daily"] = self._trim_daily(stats["daily"])
         self.save_stats(stats)
         return stats

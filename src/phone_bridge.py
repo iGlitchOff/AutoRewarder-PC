@@ -427,25 +427,72 @@ class PhoneBridge:
         try:
             text = str(detail or "")
             bal_match = re.search(r"(?:bal|balance|Saldo)[:=]\s*([\d,]+)", text, re.I)
-            if bal_match and getattr(self.api, "stats", None) is not None:
+            new_bal = None
+            if bal_match:
                 try:
                     new_bal = int(bal_match.group(1).replace(",", ""))
-                    if new_bal > 0:
-                        with self.api._stats_lock:
-                            self.api.stats.update_balance(new_bal)
-                        self.api._notify_stats_refresh()
                 except Exception:
-                    pass
+                    new_bal = None
+            plus_match = re.search(
+                r"\+\s*(\d+)\s*(?:pts|points|monedas|moedas|积分)?", text, re.I
+            )
+            plus_pts = int(plus_match.group(1)) if plus_match else 0
             clean_detail = re.sub(r"\|bal=\d+", "", text).strip()
             if kind in ("checkin", "news", "daily", "daily_set", "all"):
                 self.api._safe_log(
                     f"Phone task '{kind}': {'OK' if ok else 'incomplete'}"
                     + (f" — {clean_detail}" if clean_detail else "")
                 )
+            frac = re.search(r"(\d+)\s*/\s*(\d+)", clean_detail)
+            done_val = int(frac.group(1)) if frac else 1
+            max_val = int(frac.group(2)) if frac else 1
+
+            if ok and getattr(self.api, "stats", None) is not None:
+                try:
+                    with self.api._stats_lock:
+                        if kind in ("checkin", "all"):
+                            self.api.stats.record_phone_activity(
+                                "checkin",
+                                points_gained=plus_pts if kind == "checkin" else 5,
+                                count=1,
+                                new_balance=new_bal,
+                            )
+                        if kind in ("news", "all"):
+                            pts_n = (
+                                plus_pts if plus_pts > 0 else (done_val if frac else 30)
+                            )
+                            cnt_n = max(1, pts_n // 3)
+                            self.api.stats.record_phone_activity(
+                                "news",
+                                points_gained=pts_n,
+                                count=cnt_n,
+                                new_balance=new_bal,
+                            )
+                        if kind in ("daily", "daily_set"):
+                            self.api.stats.record_phone_activity(
+                                "daily",
+                                points_gained=done_val * 10,
+                                count=done_val,
+                                new_balance=new_bal,
+                            )
+                        elif new_bal is not None and new_bal > 0:
+                            self.api.stats.update_balance(new_bal)
+                    self.api._notify_stats_refresh()
+                except Exception:
+                    pass
+            elif (
+                new_bal is not None
+                and new_bal > 0
+                and getattr(self.api, "stats", None) is not None
+            ):
+                try:
+                    with self.api._stats_lock:
+                        self.api.stats.update_balance(new_bal)
+                    self.api._notify_stats_refresh()
+                except Exception:
+                    pass
+
             if ok and getattr(self.api, "daily_set", None) is not None:
-                frac = re.search(r"(\d+)\s*/\s*(\d+)", clean_detail)
-                done_val = int(frac.group(1)) if frac else 1
-                max_val = int(frac.group(2)) if frac else 1
                 if kind in ("checkin", "all"):
                     self.api.daily_set.mark_checkin_as_completed()
                     self.api.daily_set.save_live_snapshot({"checkin": [1, 1]})

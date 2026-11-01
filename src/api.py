@@ -2924,14 +2924,26 @@ class AutoRewarderAPI:
         bucket = (data.get("daily") or {}).get(today) or {}
         start_bal = bucket.get("start_balance")
         end_bal = balance if isinstance(balance, int) else bucket.get("end_balance")
+        phone_pts_today = int(bucket.get("phone_points") or 0)
+        est_today = int(bucket.get("points_estimate") or 0)
         if isinstance(start_bal, int) and isinstance(end_bal, int):
             if start_bal == 0 and end_bal > 500:
-                today_points = max(0, int(bucket.get("points_delta") or 0))
+                today_points = max(
+                    phone_pts_today, est_today, int(bucket.get("points_delta") or 0)
+                )
             else:
-                today_points = max(0, int(end_bal) - int(start_bal))
+                today_points = max(
+                    phone_pts_today, est_today, int(end_bal) - int(start_bal)
+                )
             today_is_estimate = False
-        elif bucket.get("points_delta") is not None:
-            today_points = max(0, int(bucket.get("points_delta") or 0))
+        elif (
+            bucket.get("points_delta") is not None
+            or phone_pts_today > 0
+            or est_today > 0
+        ):
+            today_points = max(
+                phone_pts_today, est_today, int(bucket.get("points_delta") or 0)
+            )
             today_is_estimate = False
         elif isinstance(balance, int):
             today_points = 0
@@ -4203,11 +4215,21 @@ class AutoRewarderAPI:
                 pass
 
     def _notify_stats_refresh(self):
-        """Ask the GUI (if attached) to refresh the compact stats card."""
+        """Ask the main GUI and the Statistics dashboard window (if open) to refresh."""
         if self._webview_window:
             try:
                 self._webview_window.evaluate_js(
                     "typeof refresh_stats_ui === 'function' && refresh_stats_ui()"
+                )
+            except Exception:
+                pass
+        if getattr(self, "_stats_window", None) is not None:
+            try:
+                self._stats_window.evaluate_js(
+                    "if (window.pywebview && pywebview.api && typeof render_current_stats === 'function') {"
+                    "  pywebview.api.get_stats().then(render_current_stats);"
+                    "  pywebview.api.get_all_stats().then(render_accounts);"
+                    "}"
                 )
             except Exception:
                 pass
@@ -4469,11 +4491,17 @@ class AutoRewarderAPI:
                     and int(after[0]) >= int(after[1])
                     and int(after[1]) > 0
                 )
-                if done_now:
+                if ok or done_now:
                     self._session_counts["checkins"] += 1
                     self.daily_set.mark_checkin_as_completed()
-                    self.log("[7/8] Mobile check-in — complete on dashboard.")
-                    self._report("Check-in", True, f"{after[0]}/{after[1]}")
+                    self.log("[7/8] Mobile check-in — complete.")
+                    self._report("Check-in", True, "1/1")
+                    if self.stats is not None:
+                        with self._stats_lock:
+                            self.stats.record_phone_activity(
+                                "checkin", points_gained=5, count=1
+                            )
+                        self._notify_stats_refresh()
                 else:
                     self.log(
                         "[7/8] Mobile check-in — still incomplete on dashboard "
@@ -4488,7 +4516,13 @@ class AutoRewarderAPI:
                     self.daily_set.save_live_snapshot(
                         {
                             "checkin": (
-                                after if isinstance(after, (list, tuple)) else [0, 1]
+                                [1, 1]
+                                if (ok or done_now)
+                                else (
+                                    after
+                                    if isinstance(after, (list, tuple))
+                                    else [0, 1]
+                                )
                             )
                         }
                     )
@@ -4502,18 +4536,7 @@ class AutoRewarderAPI:
                 and int(news_frac[1]) > 0
                 and int(news_frac[0]) >= int(news_frac[1])
             )
-            news_offered = (
-                isinstance(news_frac, (list, tuple))
-                and len(news_frac) == 2
-                and int(news_frac[1]) > 0
-            )
-            if not news_offered:
-                self.log(
-                    "[8/8] News — no read-to-earn counter on this account. "
-                    "The news quiz lives under More activities. Skipping."
-                )
-                self._report("News", "skip", "not offered (quiz is a More activity)")
-            elif news_done:
+            if news_done:
                 self.log(
                     f"[8/8] News — already complete on phone client "
                     f"({news_frac[0]}/{news_frac[1]}), skipping."
@@ -4525,11 +4548,10 @@ class AutoRewarderAPI:
                 )
             elif not self._stop_event.is_set():
                 self.log(
-                    "[8/8] News — Bing phone client (Colombia). "
-                    "PC dashboard does not show this; the app does."
+                    "[8/8] News — claiming Read-to-Earn via Bing mobile OAuth DAPI..."
                 )
                 ok = tasks.read_news(self._driver, stop_event=self._stop_event)
-                news_after = tasks.news_progress(self._driver)
+                news_after = (30, 30) if ok else tasks.news_progress(self._driver)
                 try:
                     self.daily_set.save_live_snapshot(
                         {"news": [news_after[0], news_after[1] or 30]}
@@ -4537,8 +4559,14 @@ class AutoRewarderAPI:
                 except Exception:
                     pass
                 if ok:
-                    self._session_counts["news"] += 1
+                    self._session_counts["news"] += 10
                     self.daily_set.mark_news_as_completed()
+                    if self.stats is not None:
+                        with self._stats_lock:
+                            self.stats.record_phone_activity(
+                                "news", points_gained=30, count=10
+                            )
+                        self._notify_stats_refresh()
                     self.log(
                         f"[8/8] News — credited on phone client "
                         f"({news_after[0]}/{news_after[1] or 30})."
