@@ -1,9 +1,9 @@
-/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.7). */
+/* AutoRewarder phone companion — LAN or remote HTTPS tunnel (v4.4.8). */
 function native() {
   try { return window.Android || null; } catch (e) { return null; }
 }
 const PHONE_PROTOCOL = 2;
-const PHONE_JOB_KINDS = { checkin: 1, news: 1, daily: 1 };
+const PHONE_JOB_KINDS = { checkin: 1, news: 1, daily: 1, all: 1 };
 const state = {
   base: "",
   lan: "",
@@ -818,6 +818,7 @@ async function refreshOverview() {
         br.hidden = true;
       }
     }
+    autoRunDailyPhoneIfNeeded(data);
   } catch (e) {
     applyPcButtons(state.pcRunning);
   } finally {
@@ -872,7 +873,11 @@ function handleJob(job) {
     banner.hidden = false;
     banner.textContent = t("phone.pc_job").replace("{kind}", kind);
   }
-  runPhone(kind, true);
+  if (kind === "all") {
+    runAllPhoneTasks();
+  } else {
+    runPhone(kind, true);
+  }
 }
 
 function detailDeniesSuccess(detail) {
@@ -1011,6 +1016,7 @@ function updateBingUi() {
   const pill = document.getElementById("bing_pill");
   const loginBtn = document.getElementById("bing_login_btn");
   const setup = document.getElementById("bing_setup_actions");
+  const everyAllBtn = document.getElementById("run_everything_all_btn");
   const autoAllBtn = document.getElementById("phone_auto_all_btn");
   const checkinBtn = document.getElementById("phone_checkin_btn");
   const newsBtn = document.getElementById("phone_news_btn");
@@ -1028,7 +1034,7 @@ function updateBingUi() {
   if (readyBtn) readyBtn.hidden = !showReady;
   if (setup) setup.hidden = !(showLogin || showReady);
   const busy = !!state.pendingVerify || !!state.verifying;
-  [autoAllBtn, checkinBtn, newsBtn, dailyBtn].forEach(function (el) {
+  [everyAllBtn, autoAllBtn, checkinBtn, newsBtn, dailyBtn].forEach(function (el) {
     if (el) el.disabled = !state.bingReady || busy;
   });
   if (state.waitingBingLogin) {
@@ -1069,7 +1075,7 @@ function applyMarket(market) {
 function showAppVersion() {
   const el = document.getElementById("app_version");
   if (!el) return;
-  let ver = "4.4.7";
+  let ver = "4.4.8";
   try {
     const n = native();
     if (n && n.appVersionName) ver = String(n.appVersionName() || ver);
@@ -1196,6 +1202,8 @@ function deliverProbe(loggedIn, purpose) {
       const kind = state.pendingBingKind;
       state.pendingBingKind = null;
       runPhone(kind, true);
+    } else {
+      autoRunDailyPhoneIfNeeded(null);
     }
     return;
   }
@@ -1240,8 +1248,57 @@ function loginBingApp() {
 
 function runAllPhoneTasks() {
   if (state.pendingVerify || state.verifying) return;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const acc = String(state.account || "default").trim();
+    localStorage.setItem("ar_auto_daily_" + acc, today);
+  } catch (e) {}
   state.autoQueue = ["news", "daily"];
   runPhone("checkin", true);
+}
+
+/**
+ * Master one-tap button: starts the full PC run (PC searches + Mobile searches +
+ * Daily Set + Quests + Visual Search + Edge) AND runs all mobile tasks in the
+ * background on this phone (Check-in + News 30 pts + Daily Set).
+ */
+function runEverythingPcAndPhone() {
+  if (state.token && !state.pcRunning && !state.pcBusy) {
+    runPc("start");
+  }
+  if (!state.pendingVerify && !state.verifying) {
+    runAllPhoneTasks();
+  }
+}
+
+/**
+ * Automatically run the phone's daily tasks (Check-in + News + Daily Set) once
+ * every calendar day per Microsoft account as soon as the Rewards session is ready.
+ */
+function autoRunDailyPhoneIfNeeded(overviewData) {
+  if (!state.bingReady || state.pendingVerify || state.verifying || state.waitingBingLogin) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const acc = String(state.account || "default").trim();
+  const key = "ar_auto_daily_" + acc;
+  let lastRunDay = "";
+  try { lastRunDay = localStorage.getItem(key) || ""; } catch (e) {}
+  if (lastRunDay === today) return;
+
+  // If overview explicitly shows all 3 mobile tasks are already maxed out today, mark today done
+  if (overviewData && overviewData.progress) {
+    const p = overviewData.progress;
+    const cLbl = String((p.checkin && p.checkin.label) || p.checkin || "");
+    const nLbl = String((p.news && p.news.label) || p.news || "");
+    const dLbl = String((p.daily && p.daily.label) || p.daily || "");
+    if (cLbl === "1/1" && nLbl === "30/30" && (dLbl === "3/3" || dLbl === "2/2")) {
+      try { localStorage.setItem(key, today); } catch (e) {}
+      return;
+    }
+  }
+
+  try { localStorage.setItem(key, today); } catch (e) {}
+  log(t("phone.auto_daily_running"));
+  runAllPhoneTasks();
 }
 
 function runPhone(kind, forceAutomated) {
@@ -1539,7 +1596,7 @@ async function checkPhoneUpdate(manual) {
   }
   const n = native();
   try {
-    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.7") : "4.4.7";
+    const mine = n && n.appVersionName ? String(n.appVersionName() || "4.4.8") : "4.4.8";
     const mineCode = n && n.appVersionCode ? Number(n.appVersionCode() || 0) : 0;
     const newerThanMine = function (update) {
       if (!update) return false;
@@ -1614,4 +1671,5 @@ restore();
 setInterval(pollJobs, 5000);
 setInterval(refreshOverview, 30000);
 setInterval(heartbeat, 30000);
+setInterval(function () { autoRunDailyPhoneIfNeeded(null); }, 600000);
 setTimeout(function () { checkPhoneUpdate(false); }, 15000);

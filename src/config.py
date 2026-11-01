@@ -14,7 +14,7 @@ import sys
 # updates while retaining the custom mobile and desktop features.
 GITHUB_VERSION = "4.4"
 # This build is based on GitHub 4.4.
-CURRENT_VERSION = "4.4.7"
+CURRENT_VERSION = "4.4.8"
 REPO = "iGlitchOn/AutoRewarder-PC"
 
 PLATFORM_NAME = platform.system()

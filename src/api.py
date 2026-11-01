@@ -2496,12 +2496,44 @@ class AutoRewarderAPI:
         return info
 
     def send_phone_job(self, kind):
-        """Queue checkin/news for the linked phone. Returns immediately."""
+        """Queue checkin/news/daily/all for the linked phone. Returns immediately."""
         job_id = self._phone_bridge().enqueue(str(kind or "checkin"))
         if not job_id:
             return {"ok": False, "error": "no phone linked or phone offline"}
         self.log(f"Queued '{kind}' for the linked phone.")
         return {"ok": True, "id": job_id}
+
+    def run_everything(self, pc_count=None, mobile_count=None):
+        """Trigger both the full PC run and all linked phone tasks (Check-in + News + Daily Set)."""
+        try:
+            settings = self.global_settings.get_settings()
+            pc = (
+                int(pc_count)
+                if pc_count is not None
+                else int(settings.get("queries_pc") or 15)
+            )
+            mobile = (
+                int(mobile_count)
+                if mobile_count is not None
+                else int(settings.get("queries_mobile") or 15)
+            )
+        except Exception:
+            pc, mobile = 15, 15
+        try:
+            bridge = self._phone_bridge()
+            if bridge and bridge._online_phones():
+                bridge.enqueue("all")
+                self.log(
+                    "Sent 'Automate all (Check-in + News + Daily Set)' to linked phone."
+                )
+        except Exception:
+            pass
+        threading.Thread(
+            target=self.main,
+            args=(pc, mobile, False, "manual"),
+            daemon=True,
+        ).start()
+        return {"ok": True, "pc": pc, "mobile": mobile}
 
     def _phone_try(self, kind, timeout=180):
         """Wait for a linked online phone to finish a job. None if no phone."""
@@ -3885,6 +3917,17 @@ class AutoRewarderAPI:
                     )
                 except Exception:
                     pass
+
+            # Automatically trigger the linked phone's daily tasks in parallel when any PC run starts
+            try:
+                bridge = self._phone_bridge()
+                if bridge and bridge._online_phones():
+                    bridge.enqueue("all")
+                    self.log(
+                        "Triggered linked phone tasks (Check-in + News + Daily Set) automatically."
+                    )
+            except Exception:
+                pass
 
             if daily_only:
                 self._run_daily_only()

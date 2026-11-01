@@ -391,18 +391,40 @@ function set_running_ui(on) {
   runInProgress = Boolean(on);
   const startBtn = document.getElementById('start_btn');
   const tasksBtn = document.getElementById('tasks_only_btn');
+  const everyBtn = document.getElementById('run_everything_btn');
   const stopBtn = document.getElementById('stop_btn');
   const label = startBtn && startBtn.querySelector('.btn-label');
   if (runInProgress) {
     if (startBtn) startBtn.disabled = true;
     if (label) label.textContent = t('run.running');
     if (tasksBtn) tasksBtn.disabled = true;
+    if (everyBtn) everyBtn.disabled = true;
     if (stopBtn) stopBtn.disabled = false;
     update_status_indicator('executing');
   } else {
     enable_start_button();
   }
   show_run_block_reason();
+}
+
+function start_everything() {
+  const reason = start_block_reason();
+  if (reason) {
+    show_toast(reason, 'warning');
+    show_run_block_reason();
+    return;
+  }
+  const pc = parseInt(document.getElementById('count_pc').value, 10) || 15;
+  const mobile = parseInt(document.getElementById('count_mobile').value, 10) || 15;
+  set_running_ui(true);
+  pywebview.api.set_queries_counts(pc, mobile).catch(function () {});
+  update_status_indicator('executing');
+  if (pywebview.api.run_everything) {
+    pywebview.api.run_everything(pc, mobile);
+  } else {
+    if (pywebview.api.send_phone_job) pywebview.api.send_phone_job('all');
+    pywebview.api.main(pc, mobile, false);
+  }
 }
 
 function start_bot() {
@@ -493,6 +515,11 @@ function enable_start_button() {
   if (tasksBtn) {
     tasksBtn.disabled = !canRun;
     tasksBtn.textContent = t('run.tasks');
+  }
+  const everyBtn = document.getElementById('run_everything_btn');
+  if (everyBtn) {
+    everyBtn.disabled = !canRun;
+    everyBtn.textContent = t('run.everything');
   }
   show_run_block_reason();
 
@@ -2063,12 +2090,12 @@ function render_phone_device(info) {
       const claimBtn = document.createElement('button');
       claimBtn.type = 'button';
       claimBtn.className = 'phone-mini';
-      claimBtn.textContent = t('claim');
-      claimBtn.title = t('claim');
+      claimBtn.textContent = t('phone.daily');
+      claimBtn.title = t('phone.daily');
       claimBtn.addEventListener('click', function () {
-        pywebview.api.send_phone_job('claim').then(function (r) {
+        pywebview.api.send_phone_job('daily').then(function (r) {
           if (!r || !r.ok) show_toast((r && r.error) || t('phone_offline_toast'), 'warning');
-          else show_toast(t('claim_sent'), 'success');
+          else show_toast(t('phone_all_sent'), 'success');
         });
       });
       const news = document.createElement('button');
