@@ -247,6 +247,7 @@ const UI_COPY = {
   "history": { en: "View history", es: "Ver historial", pt: "Ver histórico", zh: "查看历史记录" },
   "queries": { en: "Queries", es: "Búsquedas", pt: "Pesquisas", zh: "搜索次数" },
   "total_points": { en: "Total points", es: "Puntos totales", pt: "Pontos totais", zh: "总积分" },
+  "saved_points": { en: "Saved points", es: "Puntos guardados", pt: "Pontos guardados", zh: "已保存的积分" },
   "earned_today": { en: "Earned today", es: "Ganados hoy", pt: "Ganhos hoje", zh: "今日获得" },
   "rewards_overview": { en: "Rewards overview", es: "Resumen de Rewards", pt: "Resumo do Rewards", zh: "Rewards 概览" },
   "search_estimate": { en: "Search estimate", es: "Estimado de búsquedas", pt: "Estimativa de pesquisas", zh: "搜索估算" },
@@ -613,6 +614,9 @@ const UI_COPY = {
   "account_rename_failed": { en: "Could not rename account.", es: "No se pudo renombrar la cuenta.", pt: "Não foi possível renomear a conta.", zh: "无法重命名账户。" },
   "account_renamed": { en: "Renamed to \"{name}\".", es: "Renombrada a \"{name}\".", pt: "Renomeada para \"{name}\".", zh: "已重命名为“{name}”。" },
   "account_setup_failed_start": { en: "Setup could not be started.", es: "No se pudo iniciar la configuración.", pt: "Não foi possível iniciar a configuração.", zh: "无法启动设置。" },
+  "account.configure": { en: "Complete setup", es: "Completar configuración", pt: "Concluir configuração", zh: "完成设置" },
+  "account.setup_explanation": { en: "Saved points can remain visible while this browser profile still needs setup.", es: "Los puntos guardados pueden seguir visibles aunque este perfil del navegador todavía necesite configuración.", pt: "Os pontos salvos podem continuar visíveis enquanto este perfil do navegador ainda precisa ser configurado.", zh: "浏览器配置仍待完成时，之前保存的积分仍会显示。" },
+  "account.opening_setup_short": { en: "Opening…", es: "Abriendo…", pt: "Abrindo…", zh: "正在打开…" },
   "account_delete_failed": { en: "Delete failed.", es: "No se pudo eliminar la cuenta.", pt: "Falha ao excluir a conta.", zh: "删除失败。" },
   "account_deleted_named": { en: "\"{name}\" deleted.", es: "Cuenta \"{name}\" eliminada.", pt: "Conta \"{name}\" excluída.", zh: "已删除“{name}”。" },
   "phone.setup_pending": { en: "Setup pending", es: "Configuración pendiente", pt: "Configuração pendente", zh: "待设置" },
@@ -657,6 +661,7 @@ Object.keys(UI_COPY).forEach(function (key) {
 
 const LEGACY_COPY_KEYS = {
   "stats.total": "total_points",
+  "stats.saved": "saved_points",
   "stats.today": "earned_today",
   "stats.dashboard": "dashboard",
   "rewards": "rewards_overview",

@@ -911,10 +911,27 @@ class AutoRewarderAPI:
         contain that helper yet; they keep the previous in-process fallback
         until the first external update installs it.
         """
-        helper = os.path.join(
+        install_helper = os.path.join(
             os.path.dirname(sys.executable), "AutoRewarder-Updater.exe"
         )
-        if os.path.isfile(helper):
+        if os.path.isfile(install_helper):
+            helper = install_helper
+            helper_cwd = os.path.dirname(install_helper)
+            # Keep the running updater outside the app folder so the next
+            # version can replace all installed files, including this helper.
+            if sys.platform == "win32":
+                user_local = os.environ.get("LOCALAPPDATA") or APP_DIR
+                staged_dir = os.path.join(user_local, "AutoRewarder", "Updater")
+                try:
+                    os.makedirs(staged_dir, exist_ok=True)
+                    staged_helper = os.path.join(staged_dir, "AutoRewarder-Updater.exe")
+                    shutil.copy2(install_helper, staged_helper)
+                    helper = staged_helper
+                    helper_cwd = staged_dir
+                except OSError as exc:
+                    self.log(
+                        f"[WARNING] Could not stage the updater outside the app folder: {exc}"
+                    )
             language = self.ui_locale()
             args = [
                 "--url",
@@ -945,12 +962,12 @@ class AutoRewarderAPI:
 
                 params = " ".join(f'"{a}"' for a in args)
                 ctypes.windll.shell32.ShellExecuteW(
-                    None, "runas", helper, params, target_dir, 1
+                    None, "runas", helper, params, helper_cwd, 1
                 )
             else:
                 subprocess.Popen(
                     [helper] + args,
-                    cwd=target_dir,
+                    cwd=helper_cwd,
                     close_fds=True,
                 )
             threading.Thread(
@@ -2781,12 +2798,10 @@ class AutoRewarderAPI:
             return False
 
         try:
-            self.log("Clearing any cached Microsoft identity...")
-            try:
-                setup_driver.execute_cdp_cmd("Network.clearBrowserCookies", {})
-            except Exception:
-                pass
-
+            self.log(
+                "Keeping this account's saved browser session. "
+                "Sign in if Microsoft asks for the account used in this profile."
+            )
             self.log("Opening the Microsoft sign-in page...")
             login_url = (
                 "https://login.live.com/login.srf?"
@@ -2971,7 +2986,11 @@ class AutoRewarderAPI:
 
         current = self.account_manager.get_current()
         if current:
-            data["account"] = {"id": current["id"], "label": current["label"]}
+            data["account"] = {
+                "id": current["id"],
+                "label": current["label"],
+                "first_setup_done": bool(current.get("first_setup_done")),
+            }
         return data
 
     def reset_stats(self, scope="chart"):

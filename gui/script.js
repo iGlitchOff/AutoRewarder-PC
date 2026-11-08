@@ -663,7 +663,9 @@ function refresh_stats_ui() {
     const d = stats.derived;
     if (totalEl) totalEl.textContent = _fmt_points(d.total_points, d.is_estimate);
     if (totalLabel) {
-      totalLabel.textContent = d.is_estimate ? t('rewards.unverified') : t('stats.total');
+      totalLabel.textContent = stats.account && !stats.account.first_setup_done
+        ? t('stats.saved')
+        : (d.is_estimate ? t('rewards.unverified') : t('stats.total'));
     }
     if (sessionEl) {
       const flag = d.session_is_estimate ? true : 'delta';
@@ -865,6 +867,8 @@ function render_account_trigger() {
   const metaEl = document.getElementById('current_meta');
   const trigger = document.getElementById('account_trigger');
   const deleteBtn = document.getElementById('deleteAccountBtn');
+  const setupNotice = document.getElementById('account_setup_notice');
+  const setupBtn = document.getElementById('setupAccountBtn');
   if (!avatarEl || !labelEl || !metaEl || !trigger) return;
 
   const current = accountsCache.find(a => a.id === currentAccountId);
@@ -875,13 +879,39 @@ function render_account_trigger() {
     labelEl.textContent = current.label;
     metaEl.textContent = current.first_setup_done ? `${t('account.ready_to_run')} · ${t('by_microsoft')}` : `${t('account.setup_pending')} · ${t('by_microsoft')}`;
     if (deleteBtn) deleteBtn.hidden = false;
+    if (setupNotice) setupNotice.hidden = Boolean(current.first_setup_done);
+    if (setupBtn) {
+      setupBtn.disabled = false;
+      setupBtn.textContent = t('account.configure');
+    }
   } else {
     avatarEl.textContent = '+';
     avatarEl.style.backgroundColor = 'var(--surface-3)';
     labelEl.textContent = t('account.no_account');
     metaEl.textContent = accountsCache.length ? t('account.select_below') : t('account.add_first');
     if (deleteBtn) deleteBtn.hidden = true;
+    if (setupNotice) setupNotice.hidden = true;
   }
+}
+
+function begin_current_account_setup() {
+  const current = accountsCache.find(acc => acc.id === currentAccountId);
+  if (!current || !window.pywebview || !pywebview.api) return;
+  const button = document.getElementById('setupAccountBtn');
+  if (button) {
+    button.disabled = true;
+    button.textContent = t('account.opening_setup_short');
+  }
+  show_toast(tf('account.opening_setup', { name: current.label }), 'info', { duration: 6000 });
+  pywebview.api.rerun_setup(current.id).then(ok => {
+    if (!ok) show_toast(t('account_setup_failed_start'), 'error');
+    refresh_account_ui();
+  }).catch(function (err) {
+    console.error('account setup failed:', err);
+    show_toast(t('account_setup_failed_start'), 'error');
+  }).finally(function () {
+    if (button) button.disabled = false;
+  });
 }
 
 async function delete_current_account(e) {

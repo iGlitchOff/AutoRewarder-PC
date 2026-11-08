@@ -7,9 +7,11 @@ existing installation, and starts the same executable again when finished.
 
 import argparse
 import ctypes
+import filecmp
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 
@@ -105,6 +107,7 @@ class UpdaterAPI:
     def _run(self):
         package = ""
         root = ""
+        package_updater = ""
         try:
             self._progress("closing", 0.02)
             deadline = time.time() + 30
@@ -120,12 +123,18 @@ class UpdaterAPI:
 
             target = os.path.abspath(self.args.target)
             target_dir = os.path.dirname(target)
+            if not os.path.isdir(target_dir) or not os.path.isfile(target):
+                raise FileNotFoundError(
+                    "The current AutoRewarder installation could not be found. "
+                    "The update will not create a new installation folder."
+                )
 
             # If the downloaded asset is an executable, use it directly.
             if package.lower().endswith(".exe"):
                 source = package
             else:
                 root = extract_release_package(package)
+                package_updater = find_release_file(root, "AutoRewarder-Updater.exe")
                 self._progress("installing", 0.2)
                 target_name = os.path.basename(target)
                 if target_name.lower() == "autorewarder-portable.exe":
@@ -166,8 +175,19 @@ class UpdaterAPI:
                         )
                     elif source.lower().endswith(".exe") and os.path.isfile(source):
                         shutil.copy2(source, target)
+                        updater_is_in_target = os.path.normcase(
+                            os.path.dirname(os.path.abspath(sys.executable))
+                        ) == os.path.normcase(target_dir)
+                        if package_updater and not updater_is_in_target:
+                            shutil.copy2(
+                                package_updater,
+                                os.path.join(target_dir, "AutoRewarder-Updater.exe"),
+                            )
                     else:
                         source_dir = os.path.dirname(source)
+                        updater_is_in_target = os.path.normcase(
+                            os.path.dirname(os.path.abspath(sys.executable))
+                        ) == os.path.normcase(target_dir)
                         shutil.copytree(
                             source_dir,
                             target_dir,
@@ -176,8 +196,16 @@ class UpdaterAPI:
                                 {"AutoRewarder-Updater.exe"}
                                 if os.path.abspath(current)
                                 == os.path.abspath(source_dir)
+                                and updater_is_in_target
                                 else set()
                             ),
+                        )
+                    if not (
+                        source_base.endswith(("setup.exe", "installer.exe"))
+                        and os.path.isfile(source)
+                    ) and not filecmp.cmp(source, target, shallow=False):
+                        raise OSError(
+                            "The updated executable does not match the downloaded package."
                         )
                     break
                 except (PermissionError, OSError):

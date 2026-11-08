@@ -45,22 +45,17 @@ Welcome! This guide will help you get started with AutoRewarder and explain all 
 ### Step 1: Download
  1. Go to the [Releases page](https://github.com/iGlitchOn/AutoRewarder-PC/releases) on GitHub
 2. Find the latest release (v3.4 or newer)
-3. Download `AutoRewarder-Setup.exe`
+3. Download `AutoRewarder.Windows.X.Y.Z.zip`. If that release also includes `AutoRewarder-Setup.exe`, you can use the installer instead.
 
 ### Step 2: Install
-1. Double-click the downloaded `AutoRewarder-Setup.exe`
-2. The installer will:
-   - Verify you have Microsoft Edge installed
-   - Verify you have .NET Framework 4.8 or higher
-   - Install AutoRewarder to Program Files
-3. Click **Next** through the setup wizard
-4. Optionally create a desktop shortcut (recommended)
-5. Click **Finish**
+1. Extract the ZIP into a permanent folder. Do not run the application from inside the compressed file.
+2. Keep the extracted files together, including `AutoRewarder.exe`, `AutoRewarder-Updater.exe`, and `_internal`.
+3. If you chose `AutoRewarder-Setup.exe`, follow the wizard and choose whether to create a desktop shortcut.
 
 ### Step 3: Run
-1. Just run the app from the Start Menu or desktop shortcut
+1. Run `AutoRewarder.exe` from the extracted folder, or use the shortcut created by the installer.
 
-**That's it!** Installer handles everything for you.
+In-app Windows updates replace files in this same folder and reopen the app automatically.
 
 ---
 
@@ -82,6 +77,8 @@ First Setup creates a dedicated Edge profile for each account. This keeps it sep
 
 4. Close the browser window when done
 5. The account will show as **Ready**
+
+If an existing account shows **Setup pending**, use the **Complete setup** button below the account card. Saved points can still be displayed while this browser profile needs its Microsoft session confirmed. The setup flow keeps the profile's saved session; sign in if Microsoft asks, then close the Edge window.
 
 ### Multiple Accounts
 

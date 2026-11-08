@@ -71,7 +71,55 @@ def github_latest_release(repo, logger=None):
             and "updater" not in str(item.get("name") or "").lower()
         ]
         portable = is_portable_install()
-        if portable:
+        if str(repo).casefold() == REPO.casefold():
+            # Use archives for the app's Windows releases so the updater copies
+            # straight over the folder that is currently running.
+            if portable:
+                portable_assets = [
+                    item
+                    for item in downloadable
+                    if "portable" in str(item.get("name") or "").lower()
+                ]
+                asset = next(
+                    (
+                        item
+                        for item in portable_assets
+                        if str(item.get("name") or "").lower().endswith(".exe")
+                    ),
+                    next(
+                        (
+                            item
+                            for item in portable_assets
+                            if str(item.get("name") or "").lower().endswith(".zip")
+                        ),
+                        None,
+                    ),
+                )
+            else:
+                asset = next(
+                    (
+                        item
+                        for item in downloadable
+                        if "windows" in str(item.get("name") or "").lower()
+                        and "portable" not in str(item.get("name") or "").lower()
+                        and str(item.get("name") or "").lower().endswith(".zip")
+                    ),
+                    None,
+                )
+                if asset is None:
+                    asset = next(
+                        (
+                            item
+                            for item in downloadable
+                            if "portable" not in str(item.get("name") or "").lower()
+                            and any(
+                                token in str(item.get("name") or "").lower()
+                                for token in ("setup", "installer")
+                            )
+                        ),
+                        downloadable[0] if downloadable else None,
+                    )
+        elif portable:
             asset = next(
                 (
                     item

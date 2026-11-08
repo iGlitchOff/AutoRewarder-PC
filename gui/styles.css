@@ -308,6 +308,36 @@ button {
   position: relative;
 }
 
+.account-setup-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 9px 12px;
+  border: 1px solid rgba(240, 180, 77, 0.28);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+}
+
+.account-setup-cta[hidden] { display: none; }
+
+.account-setup-copy {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.account-setup-button { flex: 0 0 auto; }
+
+@media (max-width: 380px) {
+  .account-setup-cta {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .account-trigger {
   width: 100%;
   display: flex;

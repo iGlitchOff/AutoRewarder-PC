@@ -6,12 +6,11 @@ Bing mobile OAuth client (0000000040170455), checking real balance increases.
 """
 
 import random
-import time
 import uuid
 from urllib.parse import parse_qs, unquote, urlparse
 
 import requests
-from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 
 from .rewards_api import fetch_userinfo, parse_userinfo
