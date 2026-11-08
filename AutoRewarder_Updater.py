@@ -173,16 +173,12 @@ class UpdaterAPI:
                             ],
                             check=True,
                         )
-                    elif source.lower().endswith(".exe") and os.path.isfile(source):
+                    elif (
+                        not root
+                        and source.lower().endswith(".exe")
+                        and os.path.isfile(source)
+                    ):
                         shutil.copy2(source, target)
-                        updater_is_in_target = os.path.normcase(
-                            os.path.dirname(os.path.abspath(sys.executable))
-                        ) == os.path.normcase(target_dir)
-                        if package_updater and not updater_is_in_target:
-                            shutil.copy2(
-                                package_updater,
-                                os.path.join(target_dir, "AutoRewarder-Updater.exe"),
-                            )
                     else:
                         source_dir = os.path.dirname(source)
                         updater_is_in_target = os.path.normcase(
@@ -200,6 +196,11 @@ class UpdaterAPI:
                                 else set()
                             ),
                         )
+                        if package_updater and not updater_is_in_target:
+                            shutil.copy2(
+                                package_updater,
+                                os.path.join(target_dir, "AutoRewarder-Updater.exe"),
+                            )
                     if not (
                         source_base.endswith(("setup.exe", "installer.exe"))
                         and os.path.isfile(source)

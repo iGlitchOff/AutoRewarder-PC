@@ -226,6 +226,7 @@ python AutoRewarder.py
 Compilar el ejecutable:
 
 ```powershell
+python scripts/embed_gui_bundle.py
 .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean AutoRewarder.spec
 ```
 

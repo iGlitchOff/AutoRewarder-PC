@@ -142,6 +142,15 @@ if __name__ == "__main__":
     if not _acquire_gui_instance():
         sys.exit(0)
 
+    try:
+        from src.gui_assets import repair_bundled_gui
+
+        repaired = repair_bundled_gui()
+        if repaired:
+            _boot_log(f"repaired {repaired} bundled GUI files")
+    except Exception as exc:
+        _boot_log(f"GUI resource repair failed: {exc}")
+
     # GUI path — import webview + the API lazily so the headless path doesn't
     # pay for the pywebview import cost.
     import webview

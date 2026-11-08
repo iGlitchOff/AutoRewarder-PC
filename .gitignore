@@ -4,6 +4,7 @@ __pycache__/
 dist/
 build/
 release-assets/
+src/gui_bundle_data.py
 
 # Linter / type-checker caches
 .mypy_cache/
